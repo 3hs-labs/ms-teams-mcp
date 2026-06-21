@@ -1,0 +1,13 @@
+.env
+.mcp.json
+__pycache__/
+*.pyc
+.venv/
+*.egg-info
+build/
+dist/
+.ms_mcp_token.json
+.claude/
+uv.lock
+.env
+user_guide.md
