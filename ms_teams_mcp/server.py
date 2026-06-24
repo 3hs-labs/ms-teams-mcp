@@ -222,6 +222,34 @@ def _apply_to_messages(message_ids: str, action) -> str:
         parts.append("\n".join(failed))
     return "\n".join(parts)
 
+WELL_KNOWN_FOLDERS = {
+    "inbox", "archive", "drafts", "sentitems",
+    "deleteditems", "junkemail", "outbox",
+}
+
+def _resolve_folder_id(destination: str) -> str:
+    """Resolve a destination folder name to a Graph folder id.
+
+    Well-known names (case-insensitive) pass through unchanged with no API call.
+    Otherwise look up by displayName via /me/mailFolders; raise on no match
+    (lists available folders) or ambiguous match (suggest using the folder ID).
+    """
+    key = destination.strip().lower()
+    if key in WELL_KNOWN_FOLDERS:
+        return key
+    data = graph_get("/me/mailFolders", params={"$select": "id,displayName"})
+    folders = data.get("value", [])
+    matches = [f for f in folders if f.get("displayName", "").lower() == key]
+    if not matches:
+        names = ", ".join(f.get("displayName", "") for f in folders)
+        raise Exception(f"Folder '{destination}' not found. Available: {names}")
+    if len(matches) > 1:
+        raise Exception(
+            f"Folder '{destination}' is ambiguous ({len(matches)} matches). "
+            f"Use the folder ID instead."
+        )
+    return matches[0]["id"]
+
 def _parse_attendees(addresses: str) -> list[dict]:
     """Convert comma-separated email addresses to Graph API attendees format"""
     return [

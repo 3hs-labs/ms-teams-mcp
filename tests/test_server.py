@@ -12,6 +12,7 @@ from ms_teams_mcp.server import (
     _pagination_footer,
     _check_response,
     _apply_to_messages,
+    _resolve_folder_id,
     list_teams,
     list_emails,
     search_emails,
@@ -314,3 +315,37 @@ class TestApplyToMessages:
     def test_empty_input(self):
         result = _apply_to_messages("  ", lambda mid: None)
         assert result == "No message IDs provided."
+
+
+# ──────────────────────────────────────────
+# 6. test_resolve_folder_id
+# ──────────────────────────────────────────
+
+class TestResolveFolderId:
+    def test_well_known_passthrough(self):
+        # No API call needed for well-known names
+        assert _resolve_folder_id("Archive") == "archive"
+        assert _resolve_folder_id("inbox") == "inbox"
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_display_name_match(self, mock_graph_get):
+        mock_graph_get.return_value = {"value": [
+            {"id": "AAA", "displayName": "Projects"},
+            {"id": "BBB", "displayName": "Receipts"},
+        ]}
+        assert _resolve_folder_id("projects") == "AAA"
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_not_found_raises(self, mock_graph_get):
+        mock_graph_get.return_value = {"value": [{"id": "AAA", "displayName": "Projects"}]}
+        with pytest.raises(Exception, match="not found"):
+            _resolve_folder_id("Nope")
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_ambiguous_raises(self, mock_graph_get):
+        mock_graph_get.return_value = {"value": [
+            {"id": "AAA", "displayName": "Work"},
+            {"id": "BBB", "displayName": "work"},
+        ]}
+        with pytest.raises(Exception, match="ambiguous"):
+            _resolve_folder_id("work")
