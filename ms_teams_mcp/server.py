@@ -779,6 +779,18 @@ def list_mail_folders() -> str:
         result.append(f"{f['displayName']} (total: {f['totalItemCount']}, unread: {f['unreadItemCount']}) | ID: {f['id']}")
     return "\n".join(result)
 
+@mcp.tool()
+def mark_email_read(message_ids: str, is_read: bool = True) -> str:
+    """
+    Mark one or more emails as read or unread.
+    - message_ids: One or more message IDs, comma-separated
+    - is_read: True to mark as read (default), False to mark as unread
+    """
+    return _apply_to_messages(
+        message_ids,
+        lambda mid: graph_patch(f"/me/messages/{mid}", {"isRead": is_read}),
+    )
+
 # ═══════════════════════════════════════════
 # Calendar
 # ═══════════════════════════════════════════

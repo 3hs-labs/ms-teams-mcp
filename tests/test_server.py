@@ -21,6 +21,7 @@ from ms_teams_mcp.server import (
     forward_email,
     create_chat,
     list_chats,
+    mark_email_read,
 )
 
 
@@ -349,3 +350,21 @@ class TestResolveFolderId:
         ]}
         with pytest.raises(Exception, match="ambiguous"):
             _resolve_folder_id("work")
+
+
+# ──────────────────────────────────────────
+# 14. test_mark_email_read
+# ──────────────────────────────────────────
+
+class TestMarkEmailRead:
+    @patch("ms_teams_mcp.server.graph_patch")
+    def test_mark_read(self, mock_patch):
+        result = mark_email_read("m1,m2")
+        assert "2 succeeded, 0 failed." in result
+        assert mock_patch.call_count == 2
+        mock_patch.assert_any_call("/me/messages/m1", {"isRead": True})
+
+    @patch("ms_teams_mcp.server.graph_patch")
+    def test_mark_unread(self, mock_patch):
+        mark_email_read("m1", is_read=False)
+        mock_patch.assert_called_once_with("/me/messages/m1", {"isRead": False})
