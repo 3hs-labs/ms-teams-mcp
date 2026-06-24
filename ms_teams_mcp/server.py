@@ -230,7 +230,7 @@ WELL_KNOWN_FOLDERS = {
 def _resolve_folder_id(destination: str) -> str:
     """Resolve a destination folder name to a Graph folder id.
 
-    Well-known names (case-insensitive) pass through unchanged with no API call.
+    Well-known names (case-insensitive) pass through, normalized to lowercase, with no API call.
     Otherwise look up by displayName via /me/mailFolders; raise on no match
     (lists available folders) or ambiguous match (suggest using the folder ID).
     """
