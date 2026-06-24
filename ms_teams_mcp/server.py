@@ -806,6 +806,20 @@ def flag_email(message_ids: str, flag_status: str = "flagged") -> str:
         lambda mid: graph_patch(f"/me/messages/{mid}", {"flag": {"flagStatus": flag_status}}),
     )
 
+@mcp.tool()
+def move_email(message_ids: str, destination: str) -> str:
+    """
+    Move one or more emails to another mail folder.
+    - message_ids: One or more message IDs, comma-separated
+    - destination: A well-known folder name (inbox, archive, deleteditems, ...),
+      a custom folder display name, or a folder ID
+    """
+    destination_id = _resolve_folder_id(destination)
+    return _apply_to_messages(
+        message_ids,
+        lambda mid: graph_post(f"/me/messages/{mid}/move", {"destinationId": destination_id}),
+    )
+
 # ═══════════════════════════════════════════
 # Calendar
 # ═══════════════════════════════════════════

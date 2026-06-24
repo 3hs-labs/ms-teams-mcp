@@ -23,6 +23,7 @@ from ms_teams_mcp.server import (
     list_chats,
     mark_email_read,
     flag_email,
+    move_email,
 )
 
 
@@ -395,3 +396,25 @@ class TestFlagEmail:
         result = flag_email("m1", flag_status="bogus")
         assert "Invalid flag_status" in result
         mock_patch.assert_not_called()
+
+
+# ──────────────────────────────────────────
+# 15. test_move_email
+# ──────────────────────────────────────────
+
+class TestMoveEmail:
+    @patch("ms_teams_mcp.server.graph_post")
+    def test_move_well_known(self, mock_post):
+        # 'archive' is well-known -> no folder lookup, destinationId == "archive"
+        result = move_email("m1,m2", destination="archive")
+        assert "2 succeeded, 0 failed." in result
+        mock_post.assert_any_call("/me/messages/m1/move", {"destinationId": "archive"})
+
+    @patch("ms_teams_mcp.server.graph_post")
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_move_display_name(self, mock_get, mock_post):
+        mock_get.return_value = {"value": [{"id": "FID", "displayName": "Projects"}]}
+        move_email("m1", destination="Projects")
+        # folder resolved exactly once, then used for the move
+        mock_post.assert_called_once_with("/me/messages/m1/move", {"destinationId": "FID"})
+        assert mock_get.call_count == 1
