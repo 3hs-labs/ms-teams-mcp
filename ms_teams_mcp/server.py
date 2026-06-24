@@ -2025,6 +2025,65 @@ def _briefing_flagged_email() -> str:
     except Exception as e:
         return f"Flagged emails: Failed to retrieve ({e})"
 
+def _scan_channels(hours: int, max_channels: int, max_messages_per_channel: int, me_id):
+    """Walk joined teams -> channels -> recent messages once.
+
+    Returns (activity, mentions, scanned, total): recent posts within the time
+    window, posts where me_id is @mentioned, channels actually scanned, and total
+    channels seen. total > scanned means the max_channels cap was hit. Per-team and
+    per-channel errors are isolated so one failure does not abort the scan.
+    """
+    activity, mentions = [], []
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    # Enumerate all channels first (one cheap call per team) to know the true total.
+    all_channels = []  # (team_name, team_id, channel_name, channel_id)
+    teams = graph_get("/me/joinedTeams", params={"$select": "id,displayName"}).get("value", [])
+    for t in teams:
+        tid, tname = t.get("id"), t.get("displayName", "")
+        try:
+            chs = graph_get(f"/teams/{tid}/channels", params={"$select": "id,displayName"}).get("value", [])
+        except Exception:
+            continue
+        for ch in chs:
+            all_channels.append((tname, tid, ch.get("displayName", ""), ch.get("id")))
+
+    total = len(all_channels)
+    scanned = 0
+    for (tname, tid, cname, cid) in all_channels:
+        if scanned >= max_channels:
+            break
+        scanned += 1
+        try:
+            msgs = graph_get(
+                f"/teams/{tid}/channels/{cid}/messages",
+                params={"$top": max_messages_per_channel},
+            ).get("value", [])
+        except Exception:
+            continue
+        for m in msgs:
+            created_raw = m.get("createdDateTime", "")
+            if not created_raw:
+                continue
+            try:
+                created = datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if created < cutoff:
+                continue
+            sender = (m.get("from") or {}).get("user") or {}
+            sender_name = sender.get("displayName") or "Unknown"
+            body = strip_html(m.get("body", {}).get("content", ""))[:100]
+            line = f"[{tname} / {cname}] {sender_name}: {body}"
+            activity.append(line)
+            if me_id:
+                for mention in (m.get("mentions") or []):
+                    mentioned_id = ((mention.get("mentioned") or {}).get("user") or {}).get("id")
+                    if mentioned_id == me_id:
+                        mentions.append(line)
+                        break
+    return activity, mentions, scanned, total
+
 # ═══════════════════════════════════════════
 # Auth Management
 # ═══════════════════════════════════════════

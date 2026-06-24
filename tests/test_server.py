@@ -29,6 +29,7 @@ from ms_teams_mcp.server import (
     _briefing_unread_email,
     _briefing_recent_chats,
     _briefing_flagged_email,
+    _scan_channels,
 )
 
 
@@ -521,3 +522,98 @@ class TestBriefingSimpleSections:
         mock_get.side_effect = Exception("boom")
         result = _briefing_flagged_email()
         assert "Failed to retrieve" in result
+
+
+# ──────────────────────────────────────────
+# 18. test_scan_channels
+# ──────────────────────────────────────────
+
+def _channel_side_effect(messages_by_channel):
+    """Return a graph_get side_effect that routes by path."""
+    def _se(path, params=None, url=None):
+        if path == "/me/joinedTeams":
+            return {"value": [{"id": "t1", "displayName": "Team1"}]}
+        if path == "/teams/t1/channels":
+            return {"value": [
+                {"id": "c1", "displayName": "General"},
+                {"id": "c2", "displayName": "Random"},
+            ]}
+        if path.startswith("/teams/t1/channels/"):
+            cid = path.split("/")[4]
+            return {"value": messages_by_channel.get(cid, [])}
+        return {"value": []}
+    return _se
+
+class TestScanChannels:
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_collects_recent_activity(self, mock_get):
+        recent = "2999-01-01T00:00:00Z"  # always within window
+        mock_get.side_effect = _channel_side_effect({
+            "c1": [{"id": "m1", "createdDateTime": recent,
+                    "from": {"user": {"displayName": "Alice"}},
+                    "body": {"content": "<p>hello</p>"}, "mentions": []}],
+            "c2": [],
+        })
+        activity, mentions, scanned, total = _scan_channels(24, 20, 10, "me")
+        assert any("Alice" in a and "hello" in a for a in activity)
+        assert scanned == 2 and total == 2
+        assert mentions == []
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_excludes_outside_window(self, mock_get):
+        old = "2000-01-01T00:00:00Z"
+        mock_get.side_effect = _channel_side_effect({
+            "c1": [{"id": "m1", "createdDateTime": old,
+                    "from": {"user": {"displayName": "Old"}},
+                    "body": {"content": "stale"}, "mentions": []}],
+            "c2": [],
+        })
+        activity, mentions, scanned, total = _scan_channels(24, 20, 10, "me")
+        assert activity == []
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_detects_my_mention(self, mock_get):
+        recent = "2999-01-01T00:00:00Z"
+        mock_get.side_effect = _channel_side_effect({
+            "c1": [{"id": "m1", "createdDateTime": recent,
+                    "from": {"user": {"displayName": "Bob"}},
+                    "body": {"content": "ping"},
+                    "mentions": [{"mentioned": {"user": {"id": "me"}}}]}],
+            "c2": [],
+        })
+        activity, mentions, scanned, total = _scan_channels(24, 20, 10, "me")
+        assert len(mentions) == 1 and "Bob" in mentions[0]
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_respects_max_channels(self, mock_get):
+        recent = "2999-01-01T00:00:00Z"
+        mock_get.side_effect = _channel_side_effect({
+            "c1": [{"id": "m1", "createdDateTime": recent,
+                    "from": {"user": {"displayName": "A"}},
+                    "body": {"content": "x"}, "mentions": []}],
+            "c2": [{"id": "m2", "createdDateTime": recent,
+                    "from": {"user": {"displayName": "B"}},
+                    "body": {"content": "y"}, "mentions": []}],
+        })
+        activity, mentions, scanned, total = _scan_channels(24, 1, 10, "me")
+        assert scanned == 1 and total == 2   # capped
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_channel_error_isolated(self, mock_get):
+        recent = "2999-01-01T00:00:00Z"
+        def _se(path, params=None, url=None):
+            if path == "/me/joinedTeams":
+                return {"value": [{"id": "t1", "displayName": "Team1"}]}
+            if path == "/teams/t1/channels":
+                return {"value": [{"id": "c1", "displayName": "General"},
+                                  {"id": "c2", "displayName": "Random"}]}
+            if path == "/teams/t1/channels/c1/messages":
+                raise Exception("403")
+            if path == "/teams/t1/channels/c2/messages":
+                return {"value": [{"id": "m2", "createdDateTime": recent,
+                                   "from": {"user": {"displayName": "C"}},
+                                   "body": {"content": "ok"}, "mentions": []}]}
+            return {"value": []}
+        mock_get.side_effect = _se
+        activity, mentions, scanned, total = _scan_channels(24, 20, 10, "me")
+        assert any("C" in a for a in activity)   # c1 failure didn't kill the scan
