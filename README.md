@@ -7,9 +7,10 @@ Use natural language in Claude Code, VS Code, Claude Desktop, or any MCP client 
 ## Features
 
 - **Teams** — List teams/channels, read/send/reply channel messages, create/read/send 1:1 & group chats
-- **Outlook** — List/read/search/send/reply/forward emails, list mail folders
-- **Calendar** — List/create/update/delete events, recurring events, reminders
+- **Outlook** — List/read/search/send/reply/forward emails, drafts, attachments, list mail folders
+- **Calendar** — List/create/update/delete events, recurring events, reminders, respond to invitations
 - **SharePoint** — List channel files, read file contents (text/xlsx), build & search file index
+- **Attachments** — List & extract text from email and Teams message attachments (xlsx/hwp/csv/txt), or download any file to disk
 - **People** — Search users across the organization
 - **Utilities** — Unread summary, auth status, version update check
 - **Auth** — Device Code Flow authentication directly from MCP or CLI
@@ -207,12 +208,13 @@ claude mcp list                       # List registered MCP servers
 claude mcp remove ms-teams     # Remove server
 ```
 
-## Available MCP Tools (37)
+## Available MCP Tools (48)
 
 | Category | Tool | Description |
 |----------|------|-------------|
 | **Auth** | `auth_status` | Check authentication status and token validity |
-| | `authenticate` | Authenticate via Device Code Flow |
+| | `authenticate` | Authenticate via Device Code Flow (returns URL & code) |
+| | `authenticate_complete` | Complete Device Code Flow login (polls for completion) |
 | **Teams** | `list_teams` | List joined teams |
 | | `list_channels` | List channels in a team |
 | | `list_channel_messages` | Read channel messages (max 50) |
@@ -230,6 +232,8 @@ claude mcp remove ms-teams     # Remove server
 | | `send_email` | Send an email |
 | | `reply_email` | Reply or reply-all to an email |
 | | `forward_email` | Forward an email |
+| | `create_draft_email` | Create a draft email in the Drafts folder (not sent) |
+| | `send_email_with_attachment` | Send an email with local file attachments (~3MB total) |
 | | `mark_email_read` | Mark emails as read or unread |
 | | `flag_email` | Flag (mark) emails for follow-up |
 | | `move_email` | Move emails to a folder |
@@ -241,13 +245,20 @@ claude mcp remove ms-teams     # Remove server
 | | `delete_calendar_event` | Delete a calendar event |
 | | `create_recurring_event` | Create a recurring event (daily/weekly/monthly/yearly) |
 | | `create_reminder` | Create a reminder with alert |
+| | `respond_to_event` | Respond to a meeting invitation (accept/decline/tentative) |
 | **Files** | `list_channel_files` | List files in a channel (max 200) |
 | | `read_channel_file` | Read file contents (text/xlsx, 5MB limit) |
 | | `build_file_index` | Build searchable index of all accessible files |
 | | `search_file_index` | Search the file index by keyword |
+| **Attachments** | `list_email_attachments` | List attachments on an Outlook email |
+| | `read_email_attachment` | Extract text from an email attachment (xlsx/hwp/csv/txt) |
+| | `list_message_attachments` | List attachments on a Teams chat/channel message |
+| | `read_message_attachment` | Extract text from a Teams message attachment |
+| | `download_attachment` | Download an email/Teams attachment to disk as a raw binary file (any type) |
 | **People** | `search_users` | Search users in the organization |
 | **Utilities** | `daily_briefing` | Aggregate today's schedule, unread mail, recent chats, channel activity, and items needing response |
 | | `get_unread_summary` | Summarize unread emails and chats |
+| | `read_resource` | Read any Microsoft Graph resource by path or URL (read-only GET) |
 | | `check_update` | Check for newer version on GitHub |
 
 All list tools support `top`, `skip`, and `next_link` parameters for pagination.
@@ -281,6 +292,8 @@ All list tools support `top`, `skip`, and `next_link` parameters for pagination.
 > Send an email to john@example.com with subject "Project Update" and summarize today's progress
 > Reply to the latest email from Sarah saying "I'll review it by EOD"
 > Forward the budget email to the finance team at finance@example.com
+> Draft an email to the team about tomorrow's outage, but don't send it yet
+> Send the report.pdf in ~/Downloads to john@example.com with subject "Q2 Report"
 > Show my mail folders
 ```
 
@@ -295,6 +308,7 @@ All list tools support `top`, `skip`, and `next_link` parameters for pagination.
 > Remind me about the report deadline at 3pm tomorrow
 > Move my 2pm meeting to 4pm
 > Cancel the design review meeting on Friday
+> Accept the sprint planning invitation; decline the optional sync
 ```
 
 **Files**
@@ -303,6 +317,7 @@ All list tools support `top`, `skip`, and `next_link` parameters for pagination.
 > Read the project-plan.xlsx file from the Documents channel
 > Build an index of all my accessible files
 > Search my file index for "budget"
+> Download the attachment from the latest email to ~/Downloads
 ```
 
 **People & Utilities**
@@ -351,6 +366,8 @@ All list tools support `top`, `skip`, and `next_link` parameters for pagination.
 > john@example.com에게 "프로젝트 현황" 제목으로 오늘 진행 상황 정리해서 메일 보내줘
 > 김과장님 메일에 "오늘 중으로 검토하겠습니다" 답장해줘
 > 예산 관련 메일을 재무팀 finance@example.com으로 전달해줘
+> 내일 장애 관련 메일 초안만 작성해줘 (아직 보내지 말고)
+> ~/Downloads의 report.pdf를 john@example.com에게 "Q2 보고서" 제목으로 보내줘
 > 메일 폴더 목록 보여줘
 ```
 
@@ -365,6 +382,7 @@ All list tools support `top`, `skip`, and `next_link` parameters for pagination.
 > 내일 오후 3시에 보고서 마감 리마인더 설정해줘
 > 오후 2시 회의를 4시로 변경해줘
 > 금요일 디자인 리뷰 회의 취소해줘
+> 스프린트 플래닝 초대는 수락하고, 선택 회의는 거절해줘
 ```
 
 **파일**
@@ -373,6 +391,7 @@ All list tools support `top`, `skip`, and `next_link` parameters for pagination.
 > Documents 채널의 project-plan.xlsx 파일 읽어줘
 > 내가 접근 가능한 모든 파일 인덱스 만들어줘
 > 파일 인덱스에서 "예산" 검색해줘
+> 최신 메일의 첨부파일을 ~/Downloads에 다운로드해줘
 ```
 
 **사용자 & 유틸리티**
@@ -492,7 +511,7 @@ https://mcp.your-domain.com/mcp
 | `uvx` not found (Linux) | Run `source ~/.bashrc` or restart terminal after uv install |
 | Token expired | Re-run `ms-teams-mcp auth ...` or call `authenticate` tool |
 | Permission denied (403) | Check Azure AD app has required permissions with admin consent |
-| Rate limit (429) | Wait and retry — Graph API throttles excessive requests |
+| Rate limit (429) | Handled automatically — the server retries with backoff (honoring `Retry-After`). Persistent throttling surfaces an error; wait and retry. |
 | `cp949` decode error | File encoding not supported; only UTF-8 and CP949 are handled |
 | Server not starting | Verify env vars `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT_ID` are set |
 
@@ -502,6 +521,8 @@ https://mcp.your-domain.com/mcp
 ├── ms_teams_mcp/
 │   ├── __init__.py    # Package init
 │   └── server.py      # MCP server (single-file architecture)
+├── tests/
+│   └── test_server.py # pytest suite (tool formatting, error handling, retries)
 ├── pyproject.toml     # Package config & dependencies
 ├── CLAUDE.md          # Claude Code instructions
 └── README.md
