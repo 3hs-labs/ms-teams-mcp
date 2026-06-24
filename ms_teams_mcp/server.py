@@ -2084,6 +2084,58 @@ def _scan_channels(hours: int, max_channels: int, max_messages_per_channel: int,
                         break
     return activity, mentions, scanned, total
 
+@mcp.tool()
+def daily_briefing(hours: int = 24, max_channels: int = 20, max_messages_per_channel: int = 10) -> str:
+    """Aggregate today's schedule, unread mail, recent chats, channel activity,
+    and items needing your response into a single read-only briefing.
+    - hours: recency window for channel posts and @mentions (default 24)
+    - max_channels: cap on channels scanned, to bound API calls (default 20)
+    - max_messages_per_channel: messages fetched per channel (default 10)
+    """
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    parts = [f"Daily Briefing — {today} (last {hours}h)"]
+    parts.append(_briefing_calendar_today())
+    parts.append(_briefing_unread_email())
+    parts.append(_briefing_recent_chats())
+
+    # /me id for @mention detection; degrade gracefully if unavailable.
+    try:
+        me_id = graph_get("/me", params={"$select": "id"}).get("id")
+    except Exception:
+        me_id = None
+
+    activity_header = "── Channel Activity ──"
+    response_header = "── Needs Your Response ──"
+    mentions = None
+    try:
+        activity, mentions, scanned, total = _scan_channels(
+            hours, max_channels, max_messages_per_channel, me_id
+        )
+        act_lines = [activity_header]
+        if activity:
+            act_lines += [f"{i}. {a}" for i, a in enumerate(activity, 1)]
+        else:
+            act_lines.append(f"No channel activity in the last {hours}h.")
+        if total > scanned:
+            act_lines.append(f"   (scanned {scanned}/{total} channels, capped)")
+        parts.append("\n".join(act_lines))
+    except Exception as e:
+        parts.append(f"{activity_header}\nFailed to retrieve ({e})")
+
+    resp_lines = [response_header, _briefing_flagged_email()]
+    if mentions is None:
+        resp_lines.append("Channel @mentions: (unavailable)")
+    elif me_id is None:
+        resp_lines.append("Channel @mentions: (mention detection unavailable)")
+    elif mentions:
+        resp_lines.append(f"Channel @mentions ({len(mentions)}):")
+        resp_lines += [f"  - {m}" for m in mentions]
+    else:
+        resp_lines.append("Channel @mentions: none")
+    parts.append("\n".join(resp_lines))
+
+    return "\n\n".join(parts)
+
 # ═══════════════════════════════════════════
 # Auth Management
 # ═══════════════════════════════════════════

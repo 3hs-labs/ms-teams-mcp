@@ -30,6 +30,7 @@ from ms_teams_mcp.server import (
     _briefing_recent_chats,
     _briefing_flagged_email,
     _scan_channels,
+    daily_briefing,
 )
 
 
@@ -617,3 +618,80 @@ class TestScanChannels:
         mock_get.side_effect = _se
         activity, mentions, scanned, total = _scan_channels(24, 20, 10, "me")
         assert any("C" in a for a in activity)   # c1 failure didn't kill the scan
+
+
+# ──────────────────────────────────────────
+# 19. test_daily_briefing
+# ──────────────────────────────────────────
+
+def _briefing_side_effect(path, params=None, url=None):
+    if path == "/me":
+        return {"id": "me"}
+    if path == "/me/calendarView":
+        return {"value": [{"subject": "Standup",
+                           "start": {"dateTime": "2026-06-24T09:00:00"},
+                           "location": {"displayName": ""}}]}
+    if path == "/me/mailFolders/inbox":
+        return {"unreadItemCount": 3, "totalItemCount": 100}
+    if path == "/me/chats":
+        return {"value": []}
+    if path == "/me/messages":
+        return {"value": [{"subject": "Flagged1",
+                           "from": {"emailAddress": {"name": "Sue"}}}]}
+    if path == "/me/joinedTeams":
+        return {"value": [{"id": "t1", "displayName": "Team1"}]}
+    if path == "/teams/t1/channels":
+        return {"value": [{"id": "c1", "displayName": "General"}]}
+    if path == "/teams/t1/channels/c1/messages":
+        return {"value": [{"id": "m1", "createdDateTime": "2999-01-01T00:00:00Z",
+                           "from": {"user": {"displayName": "Alice"}},
+                           "body": {"content": "hi"},
+                           "mentions": [{"mentioned": {"user": {"id": "me"}}}]}]}
+    return {"value": []}
+
+class TestDailyBriefing:
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_all_sections_present(self, mock_get):
+        mock_get.side_effect = _briefing_side_effect
+        result = daily_briefing()
+        for header in ["Daily Briefing", "Today's Schedule", "Unread Mail",
+                       "Recent Chats", "Channel Activity", "Needs Your Response"]:
+            assert header in result
+        assert "Standup" in result
+        assert "3 unread / 100 total" in result
+        assert "Flagged emails (1):" in result
+        assert "Channel @mentions (1):" in result   # Alice mention surfaced
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_partial_failure_degrades(self, mock_get):
+        def _se(path, params=None, url=None):
+            if path == "/me/mailFolders/inbox":
+                raise Exception("mail down")
+            return _briefing_side_effect(path, params, url)
+        mock_get.side_effect = _se
+        result = daily_briefing()
+        assert "Unread Mail" in result
+        assert "Failed to retrieve" in result      # only that section degraded
+        assert "Today's Schedule" in result and "Standup" in result
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_me_failure_degrades_mentions(self, mock_get):
+        def _se(path, params=None, url=None):
+            if path == "/me":
+                raise Exception("no me")
+            return _briefing_side_effect(path, params, url)
+        mock_get.side_effect = _se
+        result = daily_briefing()
+        assert "mention detection unavailable" in result
+        assert "Channel Activity" in result        # activity still works
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_capped_note(self, mock_get):
+        def _se(path, params=None, url=None):
+            if path == "/teams/t1/channels":
+                return {"value": [{"id": "c1", "displayName": "General"},
+                                  {"id": "c2", "displayName": "Random"}]}
+            return _briefing_side_effect(path, params, url)
+        mock_get.side_effect = _se
+        result = daily_briefing(max_channels=1)
+        assert "capped" in result
