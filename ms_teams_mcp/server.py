@@ -8,6 +8,7 @@ import os
 import re
 import json
 import io
+import time
 import subprocess
 from collections import Counter
 from datetime import datetime, timezone, timedelta
@@ -154,50 +155,95 @@ def _check_response(res: requests.Response):
         error_msg = res.text[:200]
 
     error_map = {
+        400: f"Bad request (400): The request was malformed or missing required fields.\nDetails: {error_msg}",
         401: f"Auth error (401): Token expired or invalid. Re-authentication required.\nDetails: {error_msg}",
         403: f"Permission denied (403): Insufficient permissions for this operation. Check Azure AD app permissions.\nDetails: {error_msg}",
         404: f"Resource not found (404): The requested item does not exist or is inaccessible.\nDetails: {error_msg}",
-        429: f"Rate limit exceeded (429): Please try again later.\nDetails: {error_msg}",
+        429: f"Rate limit exceeded (429): Throttled by Graph API even after automatic retries. Please try again later.\nDetails: {error_msg}",
+        503: f"Service unavailable (503): Graph API is temporarily unavailable. Please try again later.\nDetails: {error_msg}",
     }
 
     raise Exception(error_map.get(status, f"Graph API error ({status}): {error_msg}"))
 
+# Transient HTTP statuses worth retrying automatically with backoff.
+RETRYABLE_STATUS = {429, 503, 504}
+MAX_RETRIES = 3
+MAX_BACKOFF_SECONDS = 30
+
+def _retry_after_seconds(res: requests.Response, attempt: int) -> float:
+    """Seconds to wait before the next retry.
+
+    Honor the server's Retry-After header (seconds) when present; otherwise fall
+    back to exponential backoff (1, 2, 4, ...) capped at MAX_BACKOFF_SECONDS.
+    """
+    header = res.headers.get("Retry-After")
+    if header:
+        try:
+            return min(float(header), MAX_BACKOFF_SECONDS)
+        except (TypeError, ValueError):
+            pass
+    return min(2 ** attempt, MAX_BACKOFF_SECONDS)
+
+def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
+    """Issue a Graph request, retrying transient 429/503/504 responses with backoff.
+
+    Retries up to MAX_RETRIES times, honoring the Retry-After header when present.
+    The final response (success or error) is returned for _check_response to handle.
+    """
+    res = requests.request(method, url, **kwargs)
+    for attempt in range(MAX_RETRIES):
+        if res.status_code not in RETRYABLE_STATUS:
+            return res
+        wait = _retry_after_seconds(res, attempt)
+        print(
+            f"Graph API {res.status_code}; retrying in {wait:.0f}s "
+            f"(attempt {attempt + 1}/{MAX_RETRIES})",
+            file=sys.stderr,
+        )
+        time.sleep(wait)
+        res = requests.request(method, url, **kwargs)
+    return res
+
 def graph_get(path: str, params: dict = None, url: str = None):
     if url is None:
         url = f"https://graph.microsoft.com/v1.0{path}"
-    res = requests.get(url, headers=_headers(), params=params)
+    res = _request_with_retry("GET", url, headers=_headers(), params=params)
     _check_response(res)
     return res.json()
 
 def graph_get_binary(path: str) -> requests.Response:
     """Graph API GET that returns the raw Response (for binary endpoints like /content)."""
     url = f"https://graph.microsoft.com/v1.0{path}"
-    res = requests.get(url, headers={"Authorization": _headers()["Authorization"]}, allow_redirects=True)
+    res = _request_with_retry(
+        "GET", url,
+        headers={"Authorization": _headers()["Authorization"]},
+        allow_redirects=True,
+    )
     return res
 
 def graph_post(path: str, body: dict):
     url = f"https://graph.microsoft.com/v1.0{path}"
-    res = requests.post(url, headers=_headers(), json=body)
+    res = _request_with_retry("POST", url, headers=_headers(), json=body)
     _check_response(res)
     return res.json()
 
 def graph_patch(path: str, body: dict):
     """Graph API PATCH for updating resources"""
     url = f"https://graph.microsoft.com/v1.0{path}"
-    res = requests.patch(url, headers=_headers(), json=body)
+    res = _request_with_retry("PATCH", url, headers=_headers(), json=body)
     _check_response(res)
     return res.json()
 
 def graph_delete(path: str):
     """Graph API DELETE for removing resources"""
     url = f"https://graph.microsoft.com/v1.0{path}"
-    res = requests.delete(url, headers=_headers())
+    res = _request_with_retry("DELETE", url, headers=_headers())
     _check_response(res)
 
 def graph_post_action(path: str, body: dict):
     """Graph API POST for 202 No Content responses — sendMail, reply, forward, etc."""
     url = f"https://graph.microsoft.com/v1.0{path}"
-    res = requests.post(url, headers=_headers(), json=body)
+    res = _request_with_retry("POST", url, headers=_headers(), json=body)
     _check_response(res)
 
 def _parse_recipients(addresses: str) -> list[dict]:
@@ -824,6 +870,84 @@ def forward_email(message_id: str, to: str, comment: str = "") -> str:
     return f"Email forwarded -> {to} (original ID: {message_id})"
 
 @mcp.tool()
+def create_draft_email(to: str = "", subject: str = "", body: str = "", cc: str = "", bcc: str = "") -> str:
+    """
+    Create a draft email in the Drafts folder without sending it.
+    Useful for preparing a message the user can review/edit in Outlook or send later.
+    - to: Recipient email (comma-separated for multiple, optional)
+    - subject: Email subject (optional)
+    - body: Email body text (optional)
+    - cc: CC recipients (comma-separated, optional)
+    - bcc: BCC recipients (comma-separated, optional)
+    """
+    message = {
+        "subject": subject,
+        "body": {"contentType": "Text", "content": body},
+    }
+    if to:
+        message["toRecipients"] = _parse_recipients(to)
+    if cc:
+        message["ccRecipients"] = _parse_recipients(cc)
+    if bcc:
+        message["bccRecipients"] = _parse_recipients(bcc)
+    data = graph_post("/me/messages", message)
+    return (f"Draft created (subject: {subject or '(no subject)'})\n"
+            f"- ID: {data.get('id', '')}\n- Saved to Drafts (not sent).")
+
+# Graph caps a single sendMail request (message + attachments) at ~4MB; stay under.
+MAX_SEND_ATTACHMENT_BYTES = 3 * 1024 * 1024
+
+@mcp.tool()
+def send_email_with_attachment(to: str, subject: str, body: str, attachments: str,
+                               cc: str = "", bcc: str = "") -> str:
+    """
+    Send an email with one or more local file attachments.
+    IMPORTANT: Always show the recipients, subject, body, and attachment paths to the user and get explicit confirmation before calling this tool.
+    - to: Recipient email (comma-separated for multiple)
+    - subject: Email subject
+    - body: Email body text
+    - attachments: Local file paths, comma-separated (~ expanded)
+    - cc: CC recipients (comma-separated, optional)
+    - bcc: BCC recipients (comma-separated, optional)
+    Total attachment size must stay under ~3MB (Graph single-request limit);
+    for larger files, share a link instead.
+    """
+    import base64
+    paths = [p.strip() for p in attachments.split(",") if p.strip()]
+    if not paths:
+        return "No attachment paths provided."
+    file_atts = []
+    total = 0
+    for p in paths:
+        fp = os.path.expanduser(p)
+        if not os.path.isfile(fp):
+            return f"File not found: {p}"
+        with open(fp, "rb") as f:
+            content = f.read()
+        total += len(content)
+        if total > MAX_SEND_ATTACHMENT_BYTES:
+            return ("Total attachment size exceeds the ~3MB limit for direct send. "
+                    "Share a link (e.g. OneDrive/SharePoint) for large files instead.")
+        file_atts.append({
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": os.path.basename(fp),
+            "contentBytes": base64.b64encode(content).decode("ascii"),
+        })
+    message = {
+        "subject": subject,
+        "body": {"contentType": "Text", "content": body},
+        "toRecipients": _parse_recipients(to),
+        "attachments": file_atts,
+    }
+    if cc:
+        message["ccRecipients"] = _parse_recipients(cc)
+    if bcc:
+        message["bccRecipients"] = _parse_recipients(bcc)
+    graph_post_action("/me/sendMail", {"message": message})
+    names = ", ".join(a["name"] for a in file_atts)
+    return f"Email sent -> {to} (subject: {subject}) with attachments: {names}"
+
+@mcp.tool()
 def list_mail_folders() -> str:
     """List available mail folders"""
     data = graph_get("/me/mailFolders", params={"$select": "id,displayName,totalItemCount,unreadItemCount"})
@@ -1052,6 +1176,32 @@ def delete_calendar_event(event_id: str) -> str:
     """
     graph_delete(f"/me/events/{event_id}")
     return f"Event deleted successfully.\n- ID: {event_id}"
+
+@mcp.tool()
+def respond_to_event(event_id: str, response: str, comment: str = "",
+                     send_response: bool = True) -> str:
+    """
+    Respond to a received meeting invitation: accept, decline, or tentatively accept.
+    IMPORTANT: Always confirm the response (and any comment) with the user before calling this tool.
+    - event_id: Event ID (from list_calendar_events)
+    - response: "accept", "decline", or "tentative"
+    - comment: Optional note sent to the organizer
+    - send_response: Whether to notify the organizer (default: True)
+    """
+    actions = {
+        "accept": ("accept", "accepted"),
+        "decline": ("decline", "declined"),
+        "tentative": ("tentativelyAccept", "tentatively accepted"),
+    }
+    key = response.strip().lower()
+    if key not in actions:
+        return f"Invalid response '{response}'. Use one of: accept, decline, tentative."
+    endpoint, label = actions[key]
+    body = {"sendResponse": send_response}
+    if comment:
+        body["comment"] = comment
+    graph_post_action(f"/me/events/{event_id}/{endpoint}", body)
+    return f"Meeting invitation {label} (event ID: {event_id})."
 
 @mcp.tool()
 def create_recurring_event(
@@ -1493,6 +1643,128 @@ def read_message_attachment(message_id: str = "", attachment_id: str = "",
                 f"not supported. Size: {len(content)} bytes.")
     return (f"Filename: {fname}\n{'─'*50}\n"
             f"{_extract_file_content(fname, content, max_chars)}")
+
+
+def _fetch_email_attachment_bytes(message_id: str, attachment_id: str,
+                                  max_bytes: int) -> tuple[str, bytes]:
+    """Return (filename, raw bytes) for an Outlook email attachment.
+
+    Raises on item attachments (no file) and resolves reference attachments via
+    their shared-drive link. Honors the max_bytes size cap.
+    """
+    a = graph_get(f"/me/messages/{message_id}/attachments/{attachment_id}")
+    atype = a.get("@odata.type", "")
+    name = a.get("name", "") or "attachment"
+
+    if "itemAttachment" in atype:
+        raise Exception(f"'{name}' is an attached Outlook item (email/event), "
+                        f"not a downloadable file.")
+
+    if "referenceAttachment" in atype:
+        link = a.get("sourceUrl") or a.get("contentUrl") or ""
+        if not link:
+            raise Exception(f"'{name}' is a reference attachment with no "
+                            f"resolvable URL.")
+        fname, content, _mime = _download_shared_drive_item(link, max_bytes)
+        return (fname or name), content
+
+    size = a.get("size", 0)
+    if size and size > max_bytes:
+        raise Exception(f"Attachment too large ({size / 1024 / 1024:.1f}MB). "
+                        f"Cap is {max_bytes / 1024 / 1024:.0f}MB.")
+
+    b64 = a.get("contentBytes")
+    if b64:
+        import base64
+        content = base64.b64decode(b64)
+    else:
+        resp = graph_get_binary(
+            f"/me/messages/{message_id}/attachments/{attachment_id}/$value"
+        )
+        _check_response(resp)
+        content = resp.content
+    if len(content) > max_bytes:
+        raise Exception(f"Attachment too large ({len(content) / 1024 / 1024:.1f}MB). "
+                        f"Cap is {max_bytes / 1024 / 1024:.0f}MB.")
+    return name, content
+
+
+def _save_bytes(content: bytes, filename: str, save_dir: str) -> str:
+    """Write bytes to save_dir/<basename of filename> and return the full path.
+
+    save_dir defaults to the current working directory. The filename is reduced to
+    its basename to prevent path traversal.
+    """
+    target_dir = os.path.expanduser(save_dir) if save_dir else os.getcwd()
+    os.makedirs(target_dir, exist_ok=True)
+    safe_name = os.path.basename(filename) or "attachment"
+    path = os.path.join(target_dir, safe_name)
+    with open(path, "wb") as f:
+        f.write(content)
+    return path
+
+
+@mcp.tool()
+def download_attachment(message_id: str = "", attachment_id: str = "",
+                        content_url: str = "", save_dir: str = "",
+                        chat_id: str = "", team_id: str = "", channel_id: str = "",
+                        max_mb: int = 25) -> str:
+    """
+    Download an email or Teams message attachment to disk as a raw binary file.
+    Unlike read_email_attachment / read_message_attachment (which extract text),
+    this saves any file type — images, PDFs, zips, Office docs — unchanged.
+
+    Source is auto-detected:
+      - Outlook email: pass message_id + attachment_id (from list_email_attachments).
+      - Teams message: pass content_url (from list_message_attachments), OR
+        message_id + attachment_id + scope (chat_id, OR team_id + channel_id).
+
+    - save_dir: directory to save into (default: current working directory; ~ expanded).
+    - max_mb: size cap in megabytes (default 25).
+    Returns the saved file path and size.
+    """
+    max_bytes = max_mb * 1024 * 1024
+    is_teams = bool(content_url or chat_id or (team_id and channel_id))
+
+    try:
+        if is_teams:
+            url = content_url
+            name_hint = ""
+            if not url:
+                if not message_id:
+                    return ("Provide content_url, or message_id + attachment_id + "
+                            "scope (chat_id or team_id+channel_id).")
+                msg = _resolve_teams_message(message_id, chat_id, team_id, channel_id)
+                atts = msg.get("attachments", [])
+                match = None
+                for a in atts:
+                    if attachment_id and a.get("id") == attachment_id:
+                        match = a
+                        break
+                if match is None and atts and not attachment_id:
+                    match = atts[0]
+                if match is None:
+                    return ("Attachment not found on the message. Use "
+                            "list_message_attachments to see available ids.")
+                url = match.get("contentUrl", "")
+                name_hint = match.get("name", "")
+            if not url:
+                return ("This attachment has no downloadable contentUrl "
+                        "(it may be a card or inline content).")
+            fname, content, _mime = _download_shared_drive_item(url, max_bytes)
+            fname = fname or name_hint or "attachment"
+        else:
+            if not (message_id and attachment_id):
+                return ("Provide message_id + attachment_id for an email attachment, "
+                        "or content_url / scope for a Teams message attachment.")
+            fname, content = _fetch_email_attachment_bytes(
+                message_id, attachment_id, max_bytes
+            )
+    except Exception as e:
+        return f"Could not download attachment: {e}"
+
+    path = _save_bytes(content, fname, save_dir)
+    return f"Saved '{os.path.basename(path)}' ({len(content)} bytes) to:\n{path}"
 
 
 @mcp.tool()

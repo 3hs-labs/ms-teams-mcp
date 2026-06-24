@@ -11,6 +11,9 @@ from ms_teams_mcp.server import (
     strip_html,
     _pagination_footer,
     _check_response,
+    _request_with_retry,
+    _retry_after_seconds,
+    graph_get,
     _apply_to_messages,
     _resolve_folder_id,
     list_teams,
@@ -20,12 +23,16 @@ from ms_teams_mcp.server import (
     send_email,
     reply_email,
     forward_email,
+    create_draft_email,
+    send_email_with_attachment,
+    respond_to_event,
     create_chat,
     list_chats,
     mark_email_read,
     flag_email,
     move_email,
     delete_email,
+    download_attachment,
     _briefing_calendar_today,
     _briefing_unread_email,
     _briefing_recent_chats,
@@ -112,9 +119,103 @@ class TestCheckResponse:
         with pytest.raises(Exception, match="Rate limit exceeded"):
             _check_response(res)
 
+    def test_400_raises(self):
+        res = self._make_response(400, {"error": {"message": "malformed"}})
+        with pytest.raises(Exception, match="Bad request"):
+            _check_response(res)
+
+    def test_503_raises(self):
+        res = self._make_response(503, {"error": {"message": "unavailable"}})
+        with pytest.raises(Exception, match="Service unavailable"):
+            _check_response(res)
+
     def test_200_no_raise(self):
         res = self._make_response(200)
         _check_response(res)  # should not raise
+
+
+# ──────────────────────────────────────────
+# 3b. test_request_with_retry
+# ──────────────────────────────────────────
+
+class TestRequestWithRetry:
+    def _make_response(self, status_code, headers=None):
+        res = MagicMock()
+        res.status_code = status_code
+        res.ok = 200 <= status_code < 300
+        res.headers = headers or {}
+        return res
+
+    def test_retry_after_header_honored(self):
+        res = self._make_response(429, {"Retry-After": "7"})
+        assert _retry_after_seconds(res, attempt=0) == 7
+
+    def test_retry_after_caps_at_max(self):
+        res = self._make_response(429, {"Retry-After": "999"})
+        assert _retry_after_seconds(res, attempt=0) == 30  # MAX_BACKOFF_SECONDS
+
+    def test_exponential_backoff_without_header(self):
+        res = self._make_response(429, {})
+        assert _retry_after_seconds(res, attempt=0) == 1
+        assert _retry_after_seconds(res, attempt=2) == 4
+
+    def test_invalid_retry_after_falls_back_to_backoff(self):
+        res = self._make_response(429, {"Retry-After": "soon"})
+        assert _retry_after_seconds(res, attempt=1) == 2
+
+    @patch("ms_teams_mcp.server.time.sleep")
+    @patch("ms_teams_mcp.server.requests.request")
+    def test_success_no_retry(self, mock_request, mock_sleep):
+        mock_request.return_value = self._make_response(200)
+        res = _request_with_retry("GET", "http://x")
+        assert res.status_code == 200
+        assert mock_request.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("ms_teams_mcp.server.time.sleep")
+    @patch("ms_teams_mcp.server.requests.request")
+    def test_retries_on_429_then_succeeds(self, mock_request, mock_sleep):
+        mock_request.side_effect = [
+            self._make_response(429, {"Retry-After": "1"}),
+            self._make_response(429, {"Retry-After": "1"}),
+            self._make_response(200),
+        ]
+        res = _request_with_retry("GET", "http://x")
+        assert res.status_code == 200
+        assert mock_request.call_count == 3
+        assert mock_sleep.call_count == 2
+
+    @patch("ms_teams_mcp.server.time.sleep")
+    @patch("ms_teams_mcp.server.requests.request")
+    def test_exhausts_retries_returns_last(self, mock_request, mock_sleep):
+        mock_request.return_value = self._make_response(429, {})
+        res = _request_with_retry("GET", "http://x")
+        assert res.status_code == 429
+        # 1 initial + MAX_RETRIES (3) re-attempts
+        assert mock_request.call_count == 4
+        assert mock_sleep.call_count == 3
+
+    @patch("ms_teams_mcp.server.time.sleep")
+    @patch("ms_teams_mcp.server.requests.request")
+    def test_no_retry_on_non_retryable_error(self, mock_request, mock_sleep):
+        mock_request.return_value = self._make_response(403)
+        res = _request_with_retry("GET", "http://x")
+        assert res.status_code == 403
+        assert mock_request.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("ms_teams_mcp.server._headers", return_value={"Authorization": "Bearer t"})
+    @patch("ms_teams_mcp.server.time.sleep")
+    @patch("ms_teams_mcp.server.requests.request")
+    def test_graph_get_retries_then_raises(self, mock_request, mock_sleep, mock_headers):
+        # Persistent 429 should retry then surface a friendly error via _check_response.
+        throttled = self._make_response(429)
+        throttled.text = "throttled"
+        throttled.json.return_value = {"error": {"message": "throttled"}}
+        mock_request.return_value = throttled
+        with pytest.raises(Exception, match="Rate limit exceeded"):
+            graph_get("/me")
+        assert mock_request.call_count == 4
 
 
 # ──────────────────────────────────────────
@@ -815,3 +916,214 @@ class TestSearchMessages:
         assert req["query"]["queryString"] == "hello world"
         assert req["size"] == 50  # clamped from 100 to API max
         assert req["from"] == 20
+
+
+# ──────────────────────────────────────────
+# test_download_attachment
+# ──────────────────────────────────────────
+
+class TestDownloadAttachment:
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_email_attachment_with_content_bytes(self, mock_graph_get, tmp_path):
+        import base64
+        payload = b"hello binary data"
+        mock_graph_get.return_value = {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": "report.pdf",
+            "size": len(payload),
+            "contentBytes": base64.b64encode(payload).decode("ascii"),
+        }
+        result = download_attachment(
+            message_id="m1", attachment_id="a1", save_dir=str(tmp_path)
+        )
+        saved = tmp_path / "report.pdf"
+        assert saved.exists()
+        assert saved.read_bytes() == payload
+        assert "report.pdf" in result
+        assert str(len(payload)) in result
+
+    @patch("ms_teams_mcp.server.graph_get_binary")
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_email_attachment_via_value_endpoint(self, mock_graph_get,
+                                                 mock_binary, tmp_path):
+        mock_graph_get.return_value = {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": "data.bin",
+            "size": 5,
+            "contentBytes": None,
+        }
+        resp = MagicMock()
+        resp.ok = True
+        resp.status_code = 200
+        resp.content = b"12345"
+        mock_binary.return_value = resp
+        result = download_attachment(
+            message_id="m1", attachment_id="a1", save_dir=str(tmp_path)
+        )
+        assert (tmp_path / "data.bin").read_bytes() == b"12345"
+        assert "data.bin" in result
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_email_attachment_too_large(self, mock_graph_get, tmp_path):
+        mock_graph_get.return_value = {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": "huge.zip",
+            "size": 50 * 1024 * 1024,
+        }
+        result = download_attachment(
+            message_id="m1", attachment_id="a1", save_dir=str(tmp_path), max_mb=25
+        )
+        assert "too large" in result.lower()
+        assert not (tmp_path / "huge.zip").exists()
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_item_attachment_rejected(self, mock_graph_get, tmp_path):
+        mock_graph_get.return_value = {
+            "@odata.type": "#microsoft.graph.itemAttachment",
+            "name": "Forwarded mail",
+        }
+        result = download_attachment(
+            message_id="m1", attachment_id="a1", save_dir=str(tmp_path)
+        )
+        assert "not a downloadable file" in result
+
+    @patch("ms_teams_mcp.server._download_shared_drive_item")
+    def test_teams_attachment_via_content_url(self, mock_download, tmp_path):
+        mock_download.return_value = ("slides.pptx", b"PPTXBYTES", "application/octet-stream")
+        result = download_attachment(
+            content_url="https://sharepoint/x/slides.pptx", save_dir=str(tmp_path)
+        )
+        assert (tmp_path / "slides.pptx").read_bytes() == b"PPTXBYTES"
+        assert "slides.pptx" in result
+
+    def test_missing_args_returns_guidance(self, tmp_path):
+        result = download_attachment(save_dir=str(tmp_path))
+        assert "Provide message_id" in result
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_path_traversal_in_name_is_stripped(self, mock_graph_get, tmp_path):
+        import base64
+        mock_graph_get.return_value = {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": "../../evil.sh",
+            "size": 3,
+            "contentBytes": base64.b64encode(b"rm ").decode("ascii"),
+        }
+        result = download_attachment(
+            message_id="m1", attachment_id="a1", save_dir=str(tmp_path)
+        )
+        # basename only — saved inside tmp_path, not in a parent dir
+        assert (tmp_path / "evil.sh").exists()
+        assert "evil.sh" in result
+
+
+# ──────────────────────────────────────────
+# test_create_draft_email
+# ──────────────────────────────────────────
+
+class TestCreateDraftEmail:
+    @patch("ms_teams_mcp.server.graph_post")
+    def test_creates_draft_with_recipients(self, mock_post):
+        mock_post.return_value = {"id": "draft-123"}
+        result = create_draft_email(
+            to="a@example.com,b@example.com", subject="Hi", body="Hello"
+        )
+        path, message = mock_post.call_args.args
+        assert path == "/me/messages"
+        assert message["subject"] == "Hi"
+        assert message["body"]["content"] == "Hello"
+        assert len(message["toRecipients"]) == 2
+        assert "draft-123" in result
+        assert "Drafts" in result
+
+    @patch("ms_teams_mcp.server.graph_post")
+    def test_draft_without_recipients(self, mock_post):
+        mock_post.return_value = {"id": "d1"}
+        result = create_draft_email(subject="Memo")
+        _path, message = mock_post.call_args.args
+        assert "toRecipients" not in message
+        assert "d1" in result
+
+
+# ──────────────────────────────────────────
+# test_send_email_with_attachment
+# ──────────────────────────────────────────
+
+class TestSendEmailWithAttachment:
+    @patch("ms_teams_mcp.server.graph_post_action")
+    def test_sends_with_attachment(self, mock_action, tmp_path):
+        f = tmp_path / "doc.txt"
+        f.write_bytes(b"file content")
+        result = send_email_with_attachment(
+            to="x@example.com", subject="S", body="B", attachments=str(f)
+        )
+        path, payload = mock_action.call_args.args
+        assert path == "/me/sendMail"
+        atts = payload["message"]["attachments"]
+        assert len(atts) == 1
+        assert atts[0]["name"] == "doc.txt"
+        assert atts[0]["@odata.type"] == "#microsoft.graph.fileAttachment"
+        assert "doc.txt" in result
+
+    @patch("ms_teams_mcp.server.graph_post_action")
+    def test_missing_file_returns_error(self, mock_action, tmp_path):
+        result = send_email_with_attachment(
+            to="x@example.com", subject="S", body="B",
+            attachments=str(tmp_path / "nope.txt"),
+        )
+        assert "File not found" in result
+        mock_action.assert_not_called()
+
+    @patch("ms_teams_mcp.server.graph_post_action")
+    def test_no_attachments_returns_error(self, mock_action):
+        result = send_email_with_attachment(
+            to="x@example.com", subject="S", body="B", attachments="  "
+        )
+        assert "No attachment paths" in result
+        mock_action.assert_not_called()
+
+    @patch("ms_teams_mcp.server.graph_post_action")
+    def test_oversize_attachment_rejected(self, mock_action, tmp_path):
+        big = tmp_path / "big.bin"
+        big.write_bytes(b"0" * (4 * 1024 * 1024))  # 4MB > 3MB cap
+        result = send_email_with_attachment(
+            to="x@example.com", subject="S", body="B", attachments=str(big)
+        )
+        assert "exceeds" in result.lower()
+        mock_action.assert_not_called()
+
+
+# ──────────────────────────────────────────
+# test_respond_to_event
+# ──────────────────────────────────────────
+
+class TestRespondToEvent:
+    @patch("ms_teams_mcp.server.graph_post_action")
+    def test_accept(self, mock_action):
+        result = respond_to_event(event_id="e1", response="accept")
+        path, body = mock_action.call_args.args
+        assert path == "/me/events/e1/accept"
+        assert body["sendResponse"] is True
+        assert "accepted" in result
+
+    @patch("ms_teams_mcp.server.graph_post_action")
+    def test_tentative_maps_to_endpoint(self, mock_action):
+        result = respond_to_event(event_id="e1", response="tentative", comment="maybe")
+        path, body = mock_action.call_args.args
+        assert path == "/me/events/e1/tentativelyAccept"
+        assert body["comment"] == "maybe"
+        assert "tentatively accepted" in result
+
+    @patch("ms_teams_mcp.server.graph_post_action")
+    def test_decline_with_no_response(self, mock_action):
+        result = respond_to_event(event_id="e1", response="decline", send_response=False)
+        path, body = mock_action.call_args.args
+        assert path == "/me/events/e1/decline"
+        assert body["sendResponse"] is False
+        assert "declined" in result
+
+    @patch("ms_teams_mcp.server.graph_post_action")
+    def test_invalid_response_rejected(self, mock_action):
+        result = respond_to_event(event_id="e1", response="maybe")
+        assert "Invalid response" in result
+        mock_action.assert_not_called()

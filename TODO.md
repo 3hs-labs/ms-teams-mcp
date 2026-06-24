@@ -22,10 +22,22 @@
 
 ## 품질 개선 (우선순위 중간)
 
-- [ ] 에러 핸들링 개선 — Graph API 오류(401, 403, 404, 429 rate limit) 시 사용자 친화적 메시지 반환
-- [ ] 테스트 추가 — `pytest` + mock으로 각 도구의 포맷팅 로직 검증
+- [x] 에러 핸들링 개선 — Graph API 오류(400, 401, 403, 404, 429, 503) 시 사용자 친화적 메시지 반환
+- [x] 429/503/504 자동 재시도 — `_request_with_retry()`로 `Retry-After`/지수 백오프 기반 재시도
+- [x] 테스트 추가 — `pytest` + mock으로 각 도구의 포맷팅 로직 및 재시도 로직 검증 (`tests/test_server.py`)
 - [x] nextLink 기반 페이지네이션 — `$skip` 미지원 엔드포인트용 `next_link` 파라미터 추가
 
 ## 사용성 (우선순위 낮음)
 
-- [ ] 첨부파일 다운로드 — 메일 첨부파일 읽기 기능
+- [x] 첨부파일 다운로드 — 메일/Teams 메시지 첨부파일 읽기 (`list_email_attachments`, `read_email_attachment`, `list_message_attachments`, `read_message_attachment`)
+- [x] 첨부파일 바이너리 저장 — 텍스트 추출 대신 디스크에 원본 파일 저장 (`download_attachment`)
+- [x] 회의 초대 응답 (`respond_to_event`) — 수락/거절/임시수락
+- [x] 메일 초안 작성 (`create_draft_email`) — 발송 없이 Drafts 저장
+- [x] 첨부파일 메일 발송 (`send_email_with_attachment`) — 로컬 파일 첨부
+
+## 향후 후보 (새 권한 필요)
+
+- [ ] `find_meeting_times` / `get_schedule` — 참석자 빈 시간 탐색 (`Calendars.Read.Shared`)
+- [ ] `get_presence` — 동료 현재 상태 조회 (`Presence.Read.All`)
+- [ ] Microsoft To Do 연동 (`Tasks.ReadWrite`)
+- [ ] `set_automatic_replies` — 부재중 자동응답 (`MailboxSettings.ReadWrite`)

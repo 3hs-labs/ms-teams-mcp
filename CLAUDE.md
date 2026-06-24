@@ -6,15 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 pip install -e .              # Install in dev mode with dependencies
-pip install --upgrade "git+https://github.com/joon-labs/ai-works.git#subdirectory=ms-teams-mcp"  # Install/update from GitHub
+pip install --upgrade "git+https://github.com/3hs-labs/ms-teams-mcp.git"  # Install/update from GitHub
 ms-teams-mcp                  # Run MCP server (stdio)
 ms-teams-mcp serve             # Run MCP server (streamable-http, default port 7979)
 ms-teams-mcp serve --transport sse  # Run MCP server (SSE)
 ms-teams-mcp auth             # Authenticate via Device Code Flow (headless-friendly)
 ms-teams-mcp --version        # Check version
+pytest                        # Run the test suite (pip install -e . pytest first)
 ```
 
-No test framework. No linter/formatter configured.
+Tests: `pytest` suite in `tests/test_server.py` (tool formatting, error handling, retry logic) — mocks all Graph API calls. No linter/formatter configured.
 
 ## Architecture
 
@@ -29,14 +30,15 @@ Single-file MCP server in `ms_teams_mcp/server.py`:
    - `graph_post_action(path, body)` — POST for 202 No Content (sendMail, reply, forward)
    - `graph_patch(path, body)` — PATCH requests (update resources)
    - `graph_delete(path)` — DELETE requests (remove resources)
+   - All of the above route through `_request_with_retry()`, which retries transient 429/503/504 responses (up to `MAX_RETRIES`, honoring `Retry-After`, else exponential backoff). `_check_response()` maps remaining errors (400/401/403/404/429/503) to friendly messages.
 5. **Shared Helpers** — `_parse_recipients()` for email addresses, `_parse_attendees()` for calendar attendees, `_pagination_footer()` for next-page guidance, `strip_html()` for HTML stripping
-6. **MCP Tools (44)** — Registered via `@mcp.tool()` decorator. All tools return formatted English strings (not JSON)
+6. **MCP Tools (48)** — Registered via `@mcp.tool()` decorator. All tools return formatted English strings (not JSON)
 7. **CLI Entrypoint** — `main()` branches on `sys.argv`: no args → `mcp.run()` (stdio), `serve` → web transport (streamable-http/SSE), `auth` → `_parse_auth_args()` + `cmd_auth()`, `--version` → print version
 
 ## Conventions
 
 - **English only in source code**: All comments, docstrings, and user-facing output strings must be written in English. Do not use Korean or other non-English languages in source files.
-- **User confirmation before sending**: All send/reply/forward/create/update/delete tools (`send_channel_message`, `reply_to_channel_message`, `send_chat_message`, `reply_to_chat_message`, `create_chat`, `send_email`, `reply_email`, `forward_email`, `create_calendar_event`, `create_recurring_event`, `create_reminder`, `update_calendar_event`, `delete_calendar_event`, `delete_email`) MUST show the full content to the user and receive explicit confirmation before being called. Never send automatically.
+- **User confirmation before sending**: All send/reply/forward/create/update/delete tools (`send_channel_message`, `reply_to_channel_message`, `send_chat_message`, `reply_to_chat_message`, `create_chat`, `send_email`, `reply_email`, `forward_email`, `send_email_with_attachment`, `create_calendar_event`, `create_recurring_event`, `create_reminder`, `update_calendar_event`, `delete_calendar_event`, `respond_to_event`, `delete_email`) MUST show the full content to the user and receive explicit confirmation before being called. Never send automatically. (`create_draft_email` only saves a draft, but still confirm the recipients/content.)
 - **Read-only aggregation**: `daily_briefing` is a read-only tool that aggregates today's schedule, unread mail, recent chats, channel activity, and items needing response. Channels are scanned once via `_scan_channels`, bounded by `hours`, `max_channels`, and `max_messages_per_channel` parameters.
 - Adding a new tool: add `@mcp.tool()` function in `ms_teams_mcp/server.py`, always use `graph_get()`/`graph_post()`/`graph_patch()`/`graph_delete()` for Graph API calls
 - `top` parameter limits: chats/channels/messages max 50, emails max 1000, email search max 1000, files max 200
