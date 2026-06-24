@@ -38,14 +38,17 @@ SCOPES = [
 ]
 TOKEN_CACHE_FILE = os.path.expanduser(os.environ.get("MS_TOKEN_CACHE", "~/.ms_mcp_token.json"))
 FILE_INDEX_PATH = os.path.expanduser("~/.ms_mcp_file_index.json")
-GITHUB_REPO = "joon-labs/ai-works"
+GITHUB_REPO = "3hs-labs/ms-teams-mcp"
 GITHUB_BRANCH = "main"
-GITHUB_SUBDIR = "ms-teams-mcp"
-# Install/upgrade source: the package lives in a subdirectory of the repo
-GIT_INSTALL_URL = f"git+https://github.com/{GITHUB_REPO}.git#subdirectory={GITHUB_SUBDIR}"
+GITHUB_SUBDIR = ""  # package lives at the repo root
+# Install/upgrade source (subdirectory suffix only when the package is nested)
+GIT_INSTALL_URL = f"git+https://github.com/{GITHUB_REPO}.git" + (
+    f"#subdirectory={GITHUB_SUBDIR}" if GITHUB_SUBDIR else ""
+)
 # Raw pyproject.toml used to detect the latest published version on the branch
+_PYPROJECT_PATH = f"{GITHUB_SUBDIR}/pyproject.toml" if GITHUB_SUBDIR else "pyproject.toml"
 GITHUB_PYPROJECT_URL = (
-    f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{GITHUB_SUBDIR}/pyproject.toml"
+    f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{_PYPROJECT_PATH}"
 )
 UPDATE_CHECK_CACHE = os.path.expanduser("~/.ms_mcp_update_check.json")
 
