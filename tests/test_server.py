@@ -503,3 +503,21 @@ class TestBriefingSimpleSections:
     def test_flagged_email_none(self, mock_get):
         mock_get.return_value = {"value": []}
         assert "Flagged emails: none" in _briefing_flagged_email()
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_unread_failure_degrades(self, mock_get):
+        mock_get.side_effect = Exception("boom")
+        result = _briefing_unread_email()
+        assert "Failed to retrieve" in result
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_recent_chats_failure_degrades(self, mock_get):
+        mock_get.side_effect = Exception("boom")
+        result = _briefing_recent_chats()
+        assert "Failed to retrieve" in result
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_flagged_failure_degrades(self, mock_get):
+        mock_get.side_effect = Exception("boom")
+        result = _briefing_flagged_email()
+        assert "Failed to retrieve" in result
