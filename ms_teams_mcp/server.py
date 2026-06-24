@@ -2106,7 +2106,7 @@ def daily_briefing(hours: int = 24, max_channels: int = 20, max_messages_per_cha
 
     activity_header = "── Channel Activity ──"
     response_header = "── Needs Your Response ──"
-    mentions = None
+    mentions = None  # stays None if the channel scan fails -> mentions shown as "(unavailable)"
     try:
         activity, mentions, scanned, total = _scan_channels(
             hours, max_channels, max_messages_per_channel, me_id

@@ -695,3 +695,15 @@ class TestDailyBriefing:
         mock_get.side_effect = _se
         result = daily_briefing(max_channels=1)
         assert "capped" in result
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_scan_failure_degrades(self, mock_get):
+        def _se(path, params=None, url=None):
+            if path == "/me/joinedTeams":
+                raise Exception("teams down")
+            return _briefing_side_effect(path, params, url)
+        mock_get.side_effect = _se
+        result = daily_briefing()
+        assert "Channel Activity" in result
+        assert "Failed to retrieve" in result
+        assert "(unavailable)" in result
