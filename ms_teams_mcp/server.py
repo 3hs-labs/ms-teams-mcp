@@ -26,7 +26,7 @@ __version__ = _pkg_version("ms-teams-mcp")
 # Configuration (lazy init — prevents crash on import)
 # ─────────────────────────────────────────
 SCOPES = [
-    "Mail.Read", "Mail.Send", "User.Read",
+    "Mail.Read", "Mail.Send", "Mail.ReadWrite", "User.Read",
     "Chat.Read", "Chat.ReadWrite",
     "Channel.ReadBasic.All",
     "ChannelMessage.Read.All", "ChannelMessage.Send",
