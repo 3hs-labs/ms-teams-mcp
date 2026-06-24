@@ -29,6 +29,7 @@ Use natural language in Claude Code, VS Code, Claude Desktop, or any MCP client 
 | `User.Read` | User profile |
 | `Mail.Read` | Read emails |
 | `Mail.Send` | Send, reply, forward emails |
+| `Mail.ReadWrite` | Mark as read, flag, move, delete emails |
 | `Chat.Read` | Read chats |
 | `Chat.ReadWrite` | Send chat messages, create chats |
 | `Channel.ReadBasic.All` | List channels |
@@ -206,7 +207,7 @@ claude mcp list                       # List registered MCP servers
 claude mcp remove ms-teams     # Remove server
 ```
 
-## Available MCP Tools (32)
+## Available MCP Tools (36)
 
 | Category | Tool | Description |
 |----------|------|-------------|
@@ -228,6 +229,10 @@ claude mcp remove ms-teams     # Remove server
 | | `send_email` | Send an email |
 | | `reply_email` | Reply or reply-all to an email |
 | | `forward_email` | Forward an email |
+| | `mark_email_read` | Mark emails as read |
+| | `flag_email` | Flag (mark) emails for follow-up |
+| | `move_email` | Move emails to a folder |
+| | `delete_email` | Delete emails permanently |
 | | `list_mail_folders` | List mail folders |
 | **Calendar** | `list_calendar_events` | List calendar events in a date range |
 | | `create_calendar_event` | Create a new calendar event |

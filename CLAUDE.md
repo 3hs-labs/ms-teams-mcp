@@ -30,22 +30,23 @@ Single-file MCP server in `ms_teams_mcp/server.py`:
    - `graph_patch(path, body)` — PATCH requests (update resources)
    - `graph_delete(path)` — DELETE requests (remove resources)
 5. **Shared Helpers** — `_parse_recipients()` for email addresses, `_parse_attendees()` for calendar attendees, `_pagination_footer()` for next-page guidance, `strip_html()` for HTML stripping
-6. **MCP Tools (38)** — Registered via `@mcp.tool()` decorator. All tools return formatted English strings (not JSON)
+6. **MCP Tools (42)** — Registered via `@mcp.tool()` decorator. All tools return formatted English strings (not JSON)
 7. **CLI Entrypoint** — `main()` branches on `sys.argv`: no args → `mcp.run()` (stdio), `serve` → web transport (streamable-http/SSE), `auth` → `_parse_auth_args()` + `cmd_auth()`, `--version` → print version
 
 ## Conventions
 
 - **English only in source code**: All comments, docstrings, and user-facing output strings must be written in English. Do not use Korean or other non-English languages in source files.
-- **User confirmation before sending**: All send/reply/forward/create/update/delete tools (`send_channel_message`, `reply_to_channel_message`, `send_chat_message`, `reply_to_chat_message`, `create_chat`, `send_email`, `reply_email`, `forward_email`, `create_calendar_event`, `create_recurring_event`, `create_reminder`, `update_calendar_event`, `delete_calendar_event`) MUST show the full content to the user and receive explicit confirmation before being called. Never send automatically.
+- **User confirmation before sending**: All send/reply/forward/create/update/delete tools (`send_channel_message`, `reply_to_channel_message`, `send_chat_message`, `reply_to_chat_message`, `create_chat`, `send_email`, `reply_email`, `forward_email`, `create_calendar_event`, `create_recurring_event`, `create_reminder`, `update_calendar_event`, `delete_calendar_event`, `delete_email`) MUST show the full content to the user and receive explicit confirmation before being called. Never send automatically.
 - Adding a new tool: add `@mcp.tool()` function in `ms_teams_mcp/server.py`, always use `graph_get()`/`graph_post()`/`graph_patch()`/`graph_delete()` for Graph API calls
 - `top` parameter limits: chats/channels/messages max 50, emails max 1000, email search max 1000, files max 200
+- Mail management tools: `mark_email_read`, `flag_email`, `move_email`, `delete_email` — all require `Mail.ReadWrite` scope and use `_apply_to_messages()` and `_resolve_folder_id()` helpers for batch operations and folder ID resolution
 - Pagination: all list tools support `skip` parameter. `_pagination_footer()` appends next-page guidance when `@odata.nextLink` exists
 - HTML bodies are stripped via `strip_html()` before returning
 - File reading: tries UTF-8 → CP949 decoding; xlsx parsed with `openpyxl`
 - Windows compatibility: guard `sys.stdout`/`sys.stderr` with `is not None` check before `reconfigure()`
 - Lazy init: config and MSAL apps are created on first use, not at import — allows `auth` CLI to accept `--client-id`/`--client-secret`/`--tenant-id` args
 - Version: single source in `pyproject.toml`, read via `importlib.metadata` in `server.py`
-- Scopes: `Mail.Read`, `Mail.Send`, `User.Read`, `Chat.Read`, `Chat.ReadWrite`, `Channel.ReadBasic.All`, `ChannelMessage.Read.All`, `ChannelMessage.Send`, `Team.ReadBasic.All`, `Files.Read.All`, `People.Read`, `Calendars.ReadWrite`
+- Scopes: `Mail.Read`, `Mail.Send`, `Mail.ReadWrite`, `User.Read`, `Chat.Read`, `Chat.ReadWrite`, `Channel.ReadBasic.All`, `ChannelMessage.Read.All`, `ChannelMessage.Send`, `Team.ReadBasic.All`, `Files.Read.All`, `People.Read`, `Calendars.ReadWrite`
 
 ## Release (GitHub)
 
