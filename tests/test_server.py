@@ -24,6 +24,7 @@ from ms_teams_mcp.server import (
     mark_email_read,
     flag_email,
     move_email,
+    delete_email,
 )
 
 
@@ -418,3 +419,21 @@ class TestMoveEmail:
         # folder resolved exactly once, then used for the move
         mock_post.assert_called_once_with("/me/messages/m1/move", {"destinationId": "FID"})
         assert mock_get.call_count == 1
+
+
+# ──────────────────────────────────────────
+# 16. test_delete_email
+# ──────────────────────────────────────────
+
+class TestDeleteEmail:
+    @patch("ms_teams_mcp.server.graph_delete")
+    def test_delete_multiple(self, mock_delete):
+        result = delete_email("m1,m2,m3")
+        assert "3 succeeded, 0 failed." in result
+        assert mock_delete.call_count == 3
+        mock_delete.assert_any_call("/me/messages/m1")
+
+    @patch("ms_teams_mcp.server.graph_delete")
+    def test_delete_confirmation_note_in_docstring(self, mock_delete):
+        # delete is destructive -> docstring must instruct explicit confirmation
+        assert "confirmation" in delete_email.__doc__.lower()

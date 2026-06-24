@@ -820,6 +820,18 @@ def move_email(message_ids: str, destination: str) -> str:
         lambda mid: graph_post(f"/me/messages/{mid}/move", {"destinationId": destination_id}),
     )
 
+@mcp.tool()
+def delete_email(message_ids: str) -> str:
+    """
+    Delete one or more emails (moved to Deleted Items; recoverable).
+    IMPORTANT: Always show the target emails to the user and get explicit confirmation before calling this tool.
+    - message_ids: One or more message IDs, comma-separated
+    """
+    return _apply_to_messages(
+        message_ids,
+        lambda mid: graph_delete(f"/me/messages/{mid}"),
+    )
+
 # ═══════════════════════════════════════════
 # Calendar
 # ═══════════════════════════════════════════
