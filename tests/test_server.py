@@ -22,6 +22,7 @@ from ms_teams_mcp.server import (
     create_chat,
     list_chats,
     mark_email_read,
+    flag_email,
 )
 
 
@@ -368,3 +369,29 @@ class TestMarkEmailRead:
     def test_mark_unread(self, mock_patch):
         mark_email_read("m1", is_read=False)
         mock_patch.assert_called_once_with("/me/messages/m1", {"isRead": False})
+
+
+# ──────────────────────────────────────────
+# 13. test_flag_email
+# ──────────────────────────────────────────
+
+class TestFlagEmail:
+    @patch("ms_teams_mcp.server.graph_patch")
+    def test_flag_default(self, mock_patch):
+        flag_email("m1")
+        mock_patch.assert_called_once_with(
+            "/me/messages/m1", {"flag": {"flagStatus": "flagged"}}
+        )
+
+    @patch("ms_teams_mcp.server.graph_patch")
+    def test_flag_complete(self, mock_patch):
+        flag_email("m1", flag_status="complete")
+        mock_patch.assert_called_once_with(
+            "/me/messages/m1", {"flag": {"flagStatus": "complete"}}
+        )
+
+    @patch("ms_teams_mcp.server.graph_patch")
+    def test_invalid_status_no_call(self, mock_patch):
+        result = flag_email("m1", flag_status="bogus")
+        assert "Invalid flag_status" in result
+        mock_patch.assert_not_called()

@@ -791,6 +791,21 @@ def mark_email_read(message_ids: str, is_read: bool = True) -> str:
         lambda mid: graph_patch(f"/me/messages/{mid}", {"isRead": is_read}),
     )
 
+@mcp.tool()
+def flag_email(message_ids: str, flag_status: str = "flagged") -> str:
+    """
+    Flag, complete, or clear the flag on one or more emails.
+    - message_ids: One or more message IDs, comma-separated
+    - flag_status: "flagged" (default), "complete", or "notFlagged" (clear)
+    """
+    valid = {"flagged", "complete", "notFlagged"}
+    if flag_status not in valid:
+        return f"Invalid flag_status '{flag_status}'. Use one of: flagged, complete, notFlagged."
+    return _apply_to_messages(
+        message_ids,
+        lambda mid: graph_patch(f"/me/messages/{mid}", {"flag": {"flagStatus": flag_status}}),
+    )
+
 # ═══════════════════════════════════════════
 # Calendar
 # ═══════════════════════════════════════════
