@@ -229,10 +229,10 @@ claude mcp remove ms-teams     # Remove server
 | | `send_email` | Send an email |
 | | `reply_email` | Reply or reply-all to an email |
 | | `forward_email` | Forward an email |
-| | `mark_email_read` | Mark emails as read |
+| | `mark_email_read` | Mark emails as read or unread |
 | | `flag_email` | Flag (mark) emails for follow-up |
 | | `move_email` | Move emails to a folder |
-| | `delete_email` | Delete emails permanently |
+| | `delete_email` | Delete emails (moved to Deleted Items; recoverable) |
 | | `list_mail_folders` | List mail folders |
 | **Calendar** | `list_calendar_events` | List calendar events in a date range |
 | | `create_calendar_event` | Create a new calendar event |
