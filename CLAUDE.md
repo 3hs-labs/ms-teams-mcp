@@ -30,13 +30,14 @@ Single-file MCP server in `ms_teams_mcp/server.py`:
    - `graph_patch(path, body)` — PATCH requests (update resources)
    - `graph_delete(path)` — DELETE requests (remove resources)
 5. **Shared Helpers** — `_parse_recipients()` for email addresses, `_parse_attendees()` for calendar attendees, `_pagination_footer()` for next-page guidance, `strip_html()` for HTML stripping
-6. **MCP Tools (42)** — Registered via `@mcp.tool()` decorator. All tools return formatted English strings (not JSON)
+6. **MCP Tools (43)** — Registered via `@mcp.tool()` decorator. All tools return formatted English strings (not JSON)
 7. **CLI Entrypoint** — `main()` branches on `sys.argv`: no args → `mcp.run()` (stdio), `serve` → web transport (streamable-http/SSE), `auth` → `_parse_auth_args()` + `cmd_auth()`, `--version` → print version
 
 ## Conventions
 
 - **English only in source code**: All comments, docstrings, and user-facing output strings must be written in English. Do not use Korean or other non-English languages in source files.
 - **User confirmation before sending**: All send/reply/forward/create/update/delete tools (`send_channel_message`, `reply_to_channel_message`, `send_chat_message`, `reply_to_chat_message`, `create_chat`, `send_email`, `reply_email`, `forward_email`, `create_calendar_event`, `create_recurring_event`, `create_reminder`, `update_calendar_event`, `delete_calendar_event`, `delete_email`) MUST show the full content to the user and receive explicit confirmation before being called. Never send automatically.
+- **Read-only aggregation**: `daily_briefing` is a read-only tool that aggregates today's schedule, unread mail, recent chats, channel activity, and items needing response. Channels are scanned once via `_scan_channels`, bounded by `hours`, `max_channels`, and `max_messages_per_channel` parameters.
 - Adding a new tool: add `@mcp.tool()` function in `ms_teams_mcp/server.py`, always use `graph_get()`/`graph_post()`/`graph_patch()`/`graph_delete()` for Graph API calls
 - `top` parameter limits: chats/channels/messages max 50, emails max 1000, email search max 1000, files max 200
 - Mail management tools: `mark_email_read`, `flag_email`, `move_email`, `delete_email` — all require `Mail.ReadWrite` scope and use `_apply_to_messages()` and `_resolve_folder_id()` helpers for batch operations and folder ID resolution

@@ -207,7 +207,7 @@ claude mcp list                       # List registered MCP servers
 claude mcp remove ms-teams     # Remove server
 ```
 
-## Available MCP Tools (36)
+## Available MCP Tools (37)
 
 | Category | Tool | Description |
 |----------|------|-------------|
@@ -245,7 +245,8 @@ claude mcp remove ms-teams     # Remove server
 | | `build_file_index` | Build searchable index of all accessible files |
 | | `search_file_index` | Search the file index by keyword |
 | **People** | `search_users` | Search users in the organization |
-| **Utilities** | `get_unread_summary` | Summarize unread emails and chats |
+| **Utilities** | `daily_briefing` | Aggregate today's schedule, unread mail, recent chats, channel activity, and items needing response |
+| | `get_unread_summary` | Summarize unread emails and chats |
 | | `check_update` | Check for newer version on GitHub |
 
 All list tools support `top`, `skip`, and `next_link` parameters for pagination.

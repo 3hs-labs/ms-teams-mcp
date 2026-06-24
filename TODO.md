@@ -18,6 +18,7 @@
 - [x] `update_calendar_event` — 기존 일정 수정 (시간, 참석자, 장소 변경)
 - [x] `delete_calendar_event` — 일정 삭제
 - [x] Mail management tools (`mark_email_read`, `flag_email`, `move_email`, `delete_email`) — email read status, flags, folder moves, and deletion
+- [x] daily_briefing — 일일 업무 종합 브리핑 (읽기 전용)
 
 ## 품질 개선 (우선순위 중간)
 
