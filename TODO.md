@@ -27,4 +27,3 @@
 ## 사용성 (우선순위 낮음)
 
 - [ ] 첨부파일 다운로드 — 메일 첨부파일 읽기 기능
-- [ ] PyPI 배포 — `pip install microsoft-teams-mcp`로 설치 간소화

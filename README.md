@@ -78,7 +78,7 @@ claude mcp add ms-teams \
   -e MS_CLIENT_ID=<your-client-id> \
   -e MS_CLIENT_SECRET=<your-client-secret> \
   -e MS_TENANT_ID=<your-tenant-id> \
-  -- uvx --from ms-teams-mcp ms-teams-mcp
+  -- uvx --from "git+https://github.com/joon-labs/ai-works.git#subdirectory=ms-teams-mcp" ms-teams-mcp
 ```
 
 **Windows (PowerShell):**
@@ -88,7 +88,7 @@ claude mcp add ms-teams `
   -e MS_CLIENT_ID=<your-client-id> `
   -e MS_CLIENT_SECRET=<your-client-secret> `
   -e MS_TENANT_ID=<your-tenant-id> `
-  -- uvx --from ms-teams-mcp ms-teams-mcp
+  -- uvx --from "git+https://github.com/joon-labs/ai-works.git#subdirectory=ms-teams-mcp" ms-teams-mcp
 ```
 
 > **Windows Note**: If `uvx` is not found, use `uvx.cmd` or the full path `%USERPROFILE%\.local\bin\uvx.cmd`.
@@ -106,7 +106,7 @@ Add to `.vscode/mcp.json` in your project root (or under `"mcp"` key in user `se
       "command": "uvx",
       "args": [
         "--from",
-        "ms-teams-mcp",
+        "git+https://github.com/joon-labs/ai-works.git#subdirectory=ms-teams-mcp",
         "ms-teams-mcp"
       ],
       "env": {
@@ -136,7 +136,7 @@ Add to your config file:
       "command": "uvx",
       "args": [
         "--from",
-        "ms-teams-mcp",
+        "git+https://github.com/joon-labs/ai-works.git#subdirectory=ms-teams-mcp",
         "ms-teams-mcp"
       ],
       "env": {
@@ -151,10 +151,10 @@ Add to your config file:
 
 > **Windows**: Replace `"command": "uvx"` with `"command": "uvx.cmd"` if `uvx` is not found.
 
-### pip Install
+### pip Install (from GitHub)
 
 ```bash
-pip install ms-teams-mcp
+pip install "git+https://github.com/joon-labs/ai-works.git#subdirectory=ms-teams-mcp"
 
 claude mcp add ms-teams \
   -s user \
@@ -172,7 +172,7 @@ Alternatively, you can authenticate from the CLI before starting:
 
 ```bash
 # Using uvx
-uvx --from ms-teams-mcp \
+uvx --from "git+https://github.com/joon-labs/ai-works.git#subdirectory=ms-teams-mcp" \
   ms-teams-mcp auth \
   --client-id <your-client-id> \
   --client-secret <your-client-secret> \
@@ -190,14 +190,14 @@ Token is cached at `~/.ms_mcp_token.json` and silently renewed on subsequent run
 ### Upgrade
 
 ```bash
-# uvx — clear cache, auto-downloads latest on next run
+# uvx — clear cache, re-pulls latest from GitHub on next run
 uv cache clean
 
-# pip — force reinstall
-pip install --upgrade --force-reinstall ms-teams-mcp
+# pip — force reinstall from GitHub
+pip install --upgrade --force-reinstall "git+https://github.com/joon-labs/ai-works.git#subdirectory=ms-teams-mcp"
 ```
 
-The server automatically checks for updates on startup (once per 24h) and notifies via stderr. You can also call the `check_update` tool from any MCP client.
+The server automatically checks for updates on startup (once per 24h) by reading the version in the repo's `pyproject.toml` on GitHub, and notifies via stderr. You can also call the `check_update` tool from any MCP client.
 
 ### Verify & Remove
 

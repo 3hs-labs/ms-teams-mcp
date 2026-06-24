@@ -38,7 +38,15 @@ SCOPES = [
 ]
 TOKEN_CACHE_FILE = os.path.expanduser(os.environ.get("MS_TOKEN_CACHE", "~/.ms_mcp_token.json"))
 FILE_INDEX_PATH = os.path.expanduser("~/.ms_mcp_file_index.json")
-GITHUB_REPO = "giljoonseok/ms-teams-mcp"
+GITHUB_REPO = "joon-labs/ai-works"
+GITHUB_BRANCH = "main"
+GITHUB_SUBDIR = "ms-teams-mcp"
+# Install/upgrade source: the package lives in a subdirectory of the repo
+GIT_INSTALL_URL = f"git+https://github.com/{GITHUB_REPO}.git#subdirectory={GITHUB_SUBDIR}"
+# Raw pyproject.toml used to detect the latest published version on the branch
+GITHUB_PYPROJECT_URL = (
+    f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{GITHUB_SUBDIR}/pyproject.toml"
+)
 UPDATE_CHECK_CACHE = os.path.expanduser("~/.ms_mcp_update_check.json")
 
 _cache = None
@@ -213,6 +221,7 @@ def _pagination_footer(data: dict, skip: int, top: int) -> str:
 
 _RE_HTML_TAG = re.compile(r"<[^>]+>")
 _RE_MULTI_NEWLINE = re.compile(r"\n{3,}")
+_RE_PYPROJECT_VERSION = re.compile(r'^version\s*=\s*["\']([^"\']+)["\']', re.MULTILINE)
 
 def strip_html(html: str) -> str:
     if not html:
@@ -232,8 +241,32 @@ def _parse_version(version_str: str) -> tuple:
     except (ValueError, AttributeError):
         return (0,)
 
+def _fetch_latest_version() -> str:
+    """Fetch the latest published version from the repo's pyproject.toml on GitHub.
+
+    The package is installed directly from the GitHub repository, so the
+    source of truth for the latest version is the pyproject.toml on the default branch.
+    Returns an empty string on any failure.
+    """
+    try:
+        resp = requests.get(GITHUB_PYPROJECT_URL, timeout=5)
+        if not resp.ok:
+            return ""
+        match = _RE_PYPROJECT_VERSION.search(resp.text)
+        return match.group(1) if match else ""
+    except Exception:
+        return ""
+
+def _run_pip_upgrade() -> bool:
+    """Upgrade the package in-place from the GitHub repo. Returns True on success."""
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--upgrade", GIT_INSTALL_URL],
+        capture_output=True, text=True, timeout=120,
+    )
+    return result.returncode == 0
+
 def _check_and_auto_update() -> str | None:
-    """Check PyPI for newer version and auto-update if available. Returns status message."""
+    """Check GitHub for a newer version and auto-update if available. Returns status message."""
     try:
         # Check cache — skip if checked within 24 hours
         if os.path.exists(UPDATE_CHECK_CACHE):
@@ -246,15 +279,8 @@ def _check_and_auto_update() -> str | None:
                 if (now - last_dt).total_seconds() < 86400:
                     return cache.get("message")
 
-        # Fetch latest version from PyPI
-        resp = requests.get(
-            "https://pypi.org/pypi/ms-teams-mcp/json",
-            timeout=5,
-        )
-        if not resp.ok:
-            return None
-
-        latest_tag = resp.json().get("info", {}).get("version", "")
+        # Fetch latest version from the GitHub repo (pyproject.toml on the default branch)
+        latest_tag = _fetch_latest_version()
         if not latest_tag:
             return None
 
@@ -269,12 +295,8 @@ def _check_and_auto_update() -> str | None:
             if sys.stderr is not None:
                 print(message, file=sys.stderr, flush=True)
 
-            # Auto-update via pip
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", "ms-teams-mcp"],
-                capture_output=True, text=True, timeout=120,
-            )
-            if result.returncode == 0:
+            # Auto-update via pip from the GitHub repo
+            if _run_pip_upgrade():
                 message = (
                     f"[ms-teams-mcp] Updated successfully: {__version__} -> {latest_tag}\n"
                     f"  Please restart the server to use the new version."
@@ -282,10 +304,8 @@ def _check_and_auto_update() -> str | None:
             else:
                 message = (
                     f"[ms-teams-mcp] Auto-update failed. Run manually:\n"
-                    f"  pip install --upgrade ms-teams-mcp"
+                    f"  pip install --upgrade '{GIT_INSTALL_URL}'"
                 )
-        else:
-            message = None
 
         # Save cache
         with open(UPDATE_CHECK_CACHE, "w") as f:
@@ -1823,28 +1843,17 @@ def get_unread_summary() -> str:
 
 @mcp.tool()
 def check_update() -> str:
-    """Check if a newer version of ms-teams-mcp is available on PyPI and auto-update if outdated"""
+    """Check if a newer version of ms-teams-mcp is available on GitHub and auto-update if outdated"""
     try:
-        resp = requests.get(
-            "https://pypi.org/pypi/ms-teams-mcp/json",
-            timeout=5,
-        )
-        if not resp.ok:
-            return f"Failed to check for updates (HTTP {resp.status_code})."
-
-        latest_tag = resp.json().get("info", {}).get("version", "")
+        latest_tag = _fetch_latest_version()
         if not latest_tag:
-            return f"Current version: {__version__}. No releases found on PyPI."
+            return f"Current version: {__version__}. Failed to read latest version from GitHub."
 
         latest_ver = _parse_version(latest_tag)
         current_ver = _parse_version(__version__)
 
         if latest_ver > current_ver:
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", "ms-teams-mcp"],
-                capture_output=True, text=True, timeout=120,
-            )
-            if result.returncode == 0:
+            if _run_pip_upgrade():
                 return (
                     f"Updated successfully!\n"
                     f"  {__version__} -> {latest_tag}\n"
@@ -1854,7 +1863,7 @@ def check_update() -> str:
                 f"Update available but auto-update failed.\n"
                 f"  Current: {__version__}\n"
                 f"  Latest:  {latest_tag}\n"
-                f"  Run manually: pip install --upgrade ms-teams-mcp"
+                f"  Run manually: pip install --upgrade '{GIT_INSTALL_URL}'"
             )
         return f"You are up to date (version {__version__})."
     except Exception as e:
