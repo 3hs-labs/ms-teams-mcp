@@ -16,6 +16,7 @@ from ms_teams_mcp.server import (
     list_teams,
     list_emails,
     search_emails,
+    search_messages,
     send_email,
     reply_email,
     forward_email,
@@ -67,7 +68,7 @@ class TestPaginationFooter:
         footer = _pagination_footer(data, skip=0, top=10)
         assert "next_link" in footer
         assert "https://graph.microsoft.com/v1.0/next" in footer
-        assert "추가 데이터 있음" in footer
+        assert "More data available" in footer
 
     def test_without_next_link(self):
         data = {"value": []}
@@ -93,22 +94,22 @@ class TestCheckResponse:
 
     def test_401_raises(self):
         res = self._make_response(401, {"error": {"message": "token expired"}})
-        with pytest.raises(Exception, match="인증 오류"):
+        with pytest.raises(Exception, match="Auth error"):
             _check_response(res)
 
     def test_403_raises(self):
         res = self._make_response(403, {"error": {"message": "forbidden"}})
-        with pytest.raises(Exception, match="권한 부족"):
+        with pytest.raises(Exception, match="Permission denied"):
             _check_response(res)
 
     def test_404_raises(self):
         res = self._make_response(404, {"error": {"message": "not found"}})
-        with pytest.raises(Exception, match="리소스를 찾을 수 없습니다"):
+        with pytest.raises(Exception, match="Resource not found"):
             _check_response(res)
 
     def test_429_raises(self):
         res = self._make_response(429, {"error": {"message": "throttled"}})
-        with pytest.raises(Exception, match="요청 한도 초과"):
+        with pytest.raises(Exception, match="Rate limit exceeded"):
             _check_response(res)
 
     def test_200_no_raise(self):
@@ -137,7 +138,7 @@ class TestListTeams:
     def test_list_teams_empty(self, mock_graph_get):
         mock_graph_get.return_value = {"value": []}
         result = list_teams()
-        assert "참여한 팀이 없습니다" in result
+        assert "No teams found." in result
 
 
 # ──────────────────────────────────────────
@@ -195,7 +196,7 @@ class TestListEmailsPagination:
             "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$skip=10",
         }
         result = list_emails()
-        assert "추가 데이터 있음" in result
+        assert "More data available" in result
         assert "next_link" in result
 
 
@@ -207,7 +208,7 @@ class TestSendEmail:
     @patch("ms_teams_mcp.server.graph_post_action")
     def test_send_email_success(self, mock_post_action):
         result = send_email(to="user@example.com", subject="Hi", body="Hello")
-        assert "메일 발송 완료" in result
+        assert "Email sent" in result
         assert "user@example.com" in result
         assert "Hi" in result
         mock_post_action.assert_called_once()
@@ -221,13 +222,13 @@ class TestReplyEmail:
     @patch("ms_teams_mcp.server.graph_post_action")
     def test_reply(self, mock_post_action):
         result = reply_email(message_id="msg123", body="Thanks")
-        assert "답장 완료" in result
+        assert "Reply sent" in result
         assert "msg123" in result
 
     @patch("ms_teams_mcp.server.graph_post_action")
     def test_reply_all(self, mock_post_action):
         result = reply_email(message_id="msg123", body="Thanks", reply_all=True)
-        assert "전체 답장 완료" in result
+        assert "Reply all sent" in result
         assert "msg123" in result
 
 
@@ -239,7 +240,7 @@ class TestForwardEmail:
     @patch("ms_teams_mcp.server.graph_post_action")
     def test_forward_success(self, mock_post_action):
         result = forward_email(message_id="msg456", to="other@example.com", comment="FYI")
-        assert "메일 전달 완료" in result
+        assert "Email forwarded" in result
         assert "other@example.com" in result
         assert "msg456" in result
 
@@ -256,7 +257,7 @@ class TestCreateChat:
         mock_graph_post.return_value = {"id": "new-chat-id"}
 
         result = create_chat(members="user@example.com")
-        assert "채팅 생성 완료" in result
+        assert "Chat created" in result
         assert "new-chat-id" in result
         assert "user@example.com" in result
 
@@ -300,7 +301,7 @@ class TestSearchEmailsEmpty:
     def test_empty_results(self, mock_graph_get):
         mock_graph_get.return_value = {"value": []}
         result = search_emails(query="nonexistent")
-        assert "검색 결과가 없습니다" in result
+        assert "No results found" in result
 
 
 # ──────────────────────────────────────────
@@ -707,3 +708,110 @@ class TestDailyBriefing:
         assert "Channel Activity" in result
         assert "Failed to retrieve" in result
         assert "(unavailable)" in result
+
+
+# ──────────────────────────────────────────
+# search_messages (Teams chat & channel search via /search/query)
+# ──────────────────────────────────────────
+
+def _search_response(hits, more=False):
+    """Build a Graph /search/query response wrapping the given hits."""
+    return {
+        "value": [
+            {
+                "searchTerms": ["x"],
+                "hitsContainers": [
+                    {"hits": hits, "total": len(hits), "moreResultsAvailable": more}
+                ],
+            }
+        ]
+    }
+
+
+_CHAT_HIT = {
+    "hitId": "h1",
+    "rank": 1,
+    "summary": "...the <c0>budget</c0> review is next week...",
+    "resource": {
+        "@odata.type": "#microsoft.graph.chatMessage",
+        "id": "1657782060227",
+        "createdDateTime": "2026-06-20T07:01:01Z",
+        "from": {"emailAddress": {"name": "Alice Kim", "address": "alice@x.com"}},
+        "channelIdentity": {},
+        "chatId": "19:abc@thread.v2",
+        "webUrl": "https://teams.microsoft.com/l/message/chat",
+    },
+}
+
+_CHANNEL_HIT = {
+    "hitId": "h2",
+    "rank": 2,
+    "summary": "deployment <c0>budget</c0> approved",
+    "resource": {
+        "@odata.type": "#microsoft.graph.chatMessage",
+        "id": "1657782099999",
+        "createdDateTime": "2026-06-19T03:30:00Z",
+        "from": {"emailAddress": {"name": "Bob Lee", "address": "bob@x.com"}},
+        "channelIdentity": {"teamId": "t1", "channelId": "c1"},
+        "webUrl": "https://teams.microsoft.com/l/message/channel",
+    },
+}
+
+
+class TestSearchMessages:
+    @patch("ms_teams_mcp.server.graph_post")
+    def test_mixed_chat_and_channel(self, mock_post):
+        mock_post.return_value = _search_response([_CHAT_HIT, _CHANNEL_HIT])
+        result = search_messages(query="budget")
+        # Both labels appear, in one combined list
+        assert "[Chat]" in result
+        assert "[Channel]" in result
+        # Sender names rendered
+        assert "Alice Kim" in result
+        assert "Bob Lee" in result
+        # Dates rendered (date-only)
+        assert "2026-06-20" in result
+        assert "2026-06-19" in result
+        # Summary snippet rendered with HTML hit-highlight tags stripped
+        assert "budget" in result
+        assert "<c0>" not in result
+        # webUrl rendered for click-through
+        assert "https://teams.microsoft.com/l/message/chat" in result
+
+    @patch("ms_teams_mcp.server.graph_post")
+    def test_empty_results(self, mock_post):
+        mock_post.return_value = _search_response([])
+        result = search_messages(query="nonexistent")
+        assert "No results found for 'nonexistent'." == result
+
+    @patch("ms_teams_mcp.server.graph_post")
+    def test_empty_hits_container(self, mock_post):
+        # API may omit hitsContainers entirely when there are zero hits
+        mock_post.return_value = {"value": [{"searchTerms": ["x"], "hitsContainers": []}]}
+        result = search_messages(query="nope")
+        assert "No results found for 'nope'." == result
+
+    @patch("ms_teams_mcp.server.graph_post")
+    def test_pagination_footer_when_more_available(self, mock_post):
+        mock_post.return_value = _search_response([_CHAT_HIT], more=True)
+        result = search_messages(query="budget", top=1, skip=0)
+        assert "More results available" in result
+        assert "skip=1" in result
+
+    @patch("ms_teams_mcp.server.graph_post")
+    def test_no_footer_when_no_more(self, mock_post):
+        mock_post.return_value = _search_response([_CHAT_HIT], more=False)
+        result = search_messages(query="budget")
+        assert "More results available" not in result
+
+    @patch("ms_teams_mcp.server.graph_post")
+    def test_request_body_and_size_clamp(self, mock_post):
+        mock_post.return_value = _search_response([_CHAT_HIT])
+        search_messages(query="hello world", top=100, skip=20)
+        path, body = mock_post.call_args.args
+        assert path == "/search/query"
+        req = body["requests"][0]
+        assert req["entityTypes"] == ["chatMessage"]
+        assert req["query"]["queryString"] == "hello world"
+        assert req["size"] == 50  # clamped from 100 to API max
+        assert req["from"] == 20

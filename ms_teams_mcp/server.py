@@ -718,6 +718,57 @@ def search_emails(query: str, top: int = 10, skip: int = 0, next_link: str = "")
     return "\n\n".join(result) + _pagination_footer(data, skip, top)
 
 @mcp.tool()
+def search_messages(query: str, top: int = 10, skip: int = 0) -> str:
+    """
+    Search Teams chat and channel messages via the Microsoft Graph Search API.
+    Covers both 1:1/group chats and channel posts in a single query.
+    - query: Search text. Also supports KQL scope terms, e.g.
+      "budget from:bob@example.com", "sent>2026-06-01", "IsMentioned:true".
+    - top: Number of results (max 50)
+    - skip: Number of results to skip (pagination, default 0)
+    """
+    size = min(top, 50)
+    body = {
+        "requests": [
+            {
+                "entityTypes": ["chatMessage"],
+                "query": {"queryString": query},
+                "from": skip,
+                "size": size,
+            }
+        ]
+    }
+    data = graph_post("/search/query", body)
+    containers = (data.get("value") or [{}])[0].get("hitsContainers") or []
+    container = containers[0] if containers else {}
+    hits = container.get("hits") or []
+    if not hits:
+        return f"No results found for '{query}'."
+    result = []
+    for i, hit in enumerate(hits, 1):
+        res = hit.get("resource", {})
+        channel_identity = res.get("channelIdentity") or {}
+        label = "Channel" if channel_identity.get("channelId") else "Chat"
+        sender = res.get("from", {}).get("emailAddress", {})
+        name = sender.get("name") or sender.get("address") or "Unknown"
+        addr = sender.get("address", "")
+        date = (res.get("createdDateTime") or "")[:10]
+        summary = strip_html(hit.get("summary") or "").replace("\n", " ").strip()
+        web_url = res.get("webUrl", "")
+        line = f"{i}. [{date}] [{label}] {name}"
+        if addr:
+            line += f" <{addr}>"
+        if summary:
+            line += f"\n   {summary}"
+        if web_url:
+            line += f"\n   {web_url}"
+        result.append(line)
+    output = "\n\n".join(result)
+    if container.get("moreResultsAvailable"):
+        output += f"\n\n--- More results available ---\nNext page: skip={skip + size}"
+    return output
+
+@mcp.tool()
 def send_email(to: str, subject: str, body: str, cc: str = "", bcc: str = "") -> str:
     """
     Send an email.

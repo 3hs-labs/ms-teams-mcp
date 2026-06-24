@@ -223,6 +223,7 @@ claude mcp remove ms-teams     # Remove server
 | | `send_chat_message` | Send a chat message |
 | | `reply_to_chat_message` | Reply to a chat message |
 | | `create_chat` | Create a new 1:1 or group chat |
+| | `search_messages` | Search chat & channel messages (KQL, max 50) |
 | **Outlook** | `list_emails` | List emails (max 1000) |
 | | `read_email` | Read full email body |
 | | `search_emails` | Search emails (max 1000) |
@@ -268,6 +269,7 @@ All list tools support `top`, `skip`, and `next_link` parameters for pagination.
 > Show messages from my chat with Sarah
 > Send "Are you available for a quick call?" to my chat with David
 > Create a group chat with john@example.com and jane@example.com about "Q2 Planning"
+> Search Teams messages for "budget" from bob@example.com sent after June 1
 ```
 
 **Outlook — Email**

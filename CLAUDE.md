@@ -30,7 +30,7 @@ Single-file MCP server in `ms_teams_mcp/server.py`:
    - `graph_patch(path, body)` — PATCH requests (update resources)
    - `graph_delete(path)` — DELETE requests (remove resources)
 5. **Shared Helpers** — `_parse_recipients()` for email addresses, `_parse_attendees()` for calendar attendees, `_pagination_footer()` for next-page guidance, `strip_html()` for HTML stripping
-6. **MCP Tools (43)** — Registered via `@mcp.tool()` decorator. All tools return formatted English strings (not JSON)
+6. **MCP Tools (44)** — Registered via `@mcp.tool()` decorator. All tools return formatted English strings (not JSON)
 7. **CLI Entrypoint** — `main()` branches on `sys.argv`: no args → `mcp.run()` (stdio), `serve` → web transport (streamable-http/SSE), `auth` → `_parse_auth_args()` + `cmd_auth()`, `--version` → print version
 
 ## Conventions
