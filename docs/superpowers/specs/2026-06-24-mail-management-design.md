@@ -22,7 +22,7 @@
 | 일괄 처리 | 4종 모두 `message_ids`를 **쉼표 구분 문자열**로 받아 1개 이상 처리, 건별 성공/실패 요약 반환 |
 | 이동 목적지 | well-known 폴더명은 그대로 통과, 그 외엔 표시이름→ID **자동 해석**(모호/없음 시 친화적 오류) |
 | 삭제 의미 | Graph `DELETE`의 기본 동작인 **휴지통 이동**(복구 가능). 영구삭제 아님 |
-| 테스트 | 신규 pytest 인프라는 도입하지 않음(YAGNI). 수동 검증 체크리스트로 대체 |
+| 테스트 | mock 기반 pytest 인프라가 `tests/test_server.py`에 이미 존재함을 확인 → 기존 패턴(graph 헬퍼 patch)을 따라 4종 도구·헬퍼의 단위 테스트를 TDD로 작성. (신규 인프라 도입 아님) |
 
 ## 아키텍처
 
@@ -149,19 +149,24 @@ def _resolve_folder_id(destination: str) -> str:
 - `README.md`: 도구 표·스코프 목록에 4종 추가.
 - `TODO.md`: 메일 관리 관련 항목 체크 표시.
 
-## 테스트 — 수동 검증 체크리스트
+## 테스트 — pytest (기존 mock 패턴)
 
-신규 pytest 인프라는 이번 범위에서 도입하지 않는다(별도 TODO 항목으로 유지).
+`tests/test_server.py`에 mock 기반 pytest 스위트가 이미 존재한다. `graph_get`/`graph_post`/
+`graph_post_action`을 `unittest.mock.patch`로 가로채는 동일 패턴을 따라, 신규 4종 도구와
+헬퍼(`_apply_to_messages`, `_resolve_folder_id`)의 단위 테스트를 추가한다. (assert는 신규
+코드가 반환하는 **영어** 출력 기준.)
 
-- [ ] `mark_email_read` 단건 읽음 처리 → `list_emails`에서 `[N]` 마크 사라짐
-- [ ] `mark_email_read(is_read=False)` 안읽음 처리 → 마크 다시 표시
-- [ ] `flag_email` `flagged` / `complete` / `notFlagged` 각각
-- [ ] `flag_email` 잘못된 status → 친화적 오류
-- [ ] `move_email` well-known(`archive`) 이동
-- [ ] `move_email` 사용자 정의 폴더(표시이름) 이동
-- [ ] `move_email` 없는 폴더 / 모호한 폴더 → 각각 오류 메시지
-- [ ] `delete_email` 단건 → 휴지통 이동 확인(복구 가능)
-- [ ] 다건(쉼표) 일괄 처리 + 일부 잘못된 ID 혼합 → 부분 성공/실패 요약
+검증 대상:
+- `_apply_to_messages`: 단건 성공, 다건 성공, 일부 실패(부분 요약), 빈 입력
+- `_resolve_folder_id`: well-known 통과(API 호출 없음), 표시이름 1건 매칭, 0건(없음 오류), 2건+(모호 오류)
+- `mark_email_read`: 읽음(`isRead: true`) / 안읽음(`is_read=False`) 시 graph_patch 바디 검증
+- `flag_email`: `flagged`/`complete`/`notFlagged` 바디 검증, 잘못된 status 시 Graph 호출 없이 오류
+- `move_email`: 해석된 destinationId로 graph_post 호출 검증
+- `delete_email`: graph_delete 호출 검증, 다건 처리
+
+> **주의 (범위 밖):** 기존 테스트들은 한국어 출력 문자열을 검증하나 현 코드는 영어를 반환해
+> 이미 실패(stale) 상태다. 이번 작업에서는 **신규 테스트만** 추가하고 기존 stale 테스트는
+> 손대지 않는다(별도 정리 항목).
 
 ## 범위 밖 (이번에 하지 않음)
 
