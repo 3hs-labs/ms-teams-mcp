@@ -25,6 +25,10 @@ from ms_teams_mcp.server import (
     flag_email,
     move_email,
     delete_email,
+    _briefing_calendar_today,
+    _briefing_unread_email,
+    _briefing_recent_chats,
+    _briefing_flagged_email,
 )
 
 
@@ -437,3 +441,65 @@ class TestDeleteEmail:
     def test_delete_confirmation_note_in_docstring(self, mock_delete):
         # delete is destructive -> docstring must instruct explicit confirmation
         assert "confirmation" in delete_email.__doc__.lower()
+
+
+# ──────────────────────────────────────────
+# 17. test_briefing_simple_sections
+# ──────────────────────────────────────────
+
+class TestBriefingSimpleSections:
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_calendar_today(self, mock_get):
+        mock_get.return_value = {"value": [
+            {"subject": "Standup", "start": {"dateTime": "2026-06-24T09:00:00"},
+             "location": {"displayName": "Room A"}}
+        ]}
+        result = _briefing_calendar_today()
+        assert "Today's Schedule" in result
+        assert "Standup" in result
+        assert "Room A" in result
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_calendar_empty(self, mock_get):
+        mock_get.return_value = {"value": []}
+        assert "No events today." in _briefing_calendar_today()
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_calendar_failure_degrades(self, mock_get):
+        mock_get.side_effect = Exception("boom")
+        result = _briefing_calendar_today()
+        assert "Today's Schedule" in result
+        assert "Failed to retrieve" in result
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_unread_email(self, mock_get):
+        mock_get.return_value = {"unreadItemCount": 7, "totalItemCount": 213}
+        result = _briefing_unread_email()
+        assert "7 unread / 213 total" in result
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_recent_chats(self, mock_get):
+        mock_get.return_value = {"value": [
+            {"topic": "Project X", "members": [{"displayName": "A"}],
+             "lastMessagePreview": {"body": {"content": "<p>hi</p>"},
+                                    "createdDateTime": "2026-06-24T08:00:00Z"}}
+        ]}
+        result = _briefing_recent_chats()
+        assert "Recent Chats" in result
+        assert "Project X" in result
+        assert "hi" in result
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_flagged_email(self, mock_get):
+        mock_get.return_value = {"value": [
+            {"subject": "Reply needed", "from": {"emailAddress": {"name": "Bob"}}}
+        ]}
+        result = _briefing_flagged_email()
+        assert "Flagged emails (1):" in result
+        assert "Reply needed" in result
+        assert "Bob" in result
+
+    @patch("ms_teams_mcp.server.graph_get")
+    def test_flagged_email_none(self, mock_get):
+        mock_get.return_value = {"value": []}
+        assert "Flagged emails: none" in _briefing_flagged_email()

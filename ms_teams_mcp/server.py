@@ -1939,6 +1939,92 @@ def get_unread_summary() -> str:
 
     return "\n".join(parts)
 
+def _briefing_calendar_today() -> str:
+    """Return today's calendar events as a briefing section."""
+    header = "── Today's Schedule ──"
+    try:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        data = graph_get("/me/calendarView", params={
+            "startDateTime": f"{today}T00:00:00Z",
+            "endDateTime": f"{today}T23:59:59Z",
+            "$select": "subject,start,end,location",
+            "$orderby": "start/dateTime",
+            "$top": 20,
+        })
+        events = data.get("value", [])
+        if not events:
+            return f"{header}\nNo events today."
+        lines = [header]
+        for i, ev in enumerate(events, 1):
+            subject = ev.get("subject", "(No subject)")
+            start_time = ev.get("start", {}).get("dateTime", "")[:16]
+            location = ev.get("location", {}).get("displayName", "")
+            loc = f" @ {location}" if location else ""
+            lines.append(f"{i}. [{start_time}] {subject}{loc}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"{header}\nFailed to retrieve ({e})"
+
+def _briefing_unread_email() -> str:
+    """Return the inbox unread/total count as a briefing section."""
+    header = "── Unread Mail ──"
+    try:
+        inbox = graph_get("/me/mailFolders/inbox", params={"$select": "unreadItemCount,totalItemCount"})
+        unread = inbox.get("unreadItemCount", 0)
+        total = inbox.get("totalItemCount", 0)
+        return f"{header}\nInbox: {unread} unread / {total} total"
+    except Exception as e:
+        return f"{header}\nFailed to retrieve ({e})"
+
+def _briefing_recent_chats() -> str:
+    """Return the most recent chats as a briefing section."""
+    header = "── Recent Chats ──"
+    try:
+        chats = graph_get("/me/chats", params={
+            "$top": 10,
+            "$expand": "members",
+            "$orderby": "lastMessagePreview/createdDateTime desc",
+        })
+        chat_list = chats.get("value", [])
+        if not chat_list:
+            return f"{header}\nNo recent chats."
+        lines = [header]
+        for i, c in enumerate(chat_list, 1):
+            topic = c.get("topic") or ""
+            members = [m.get("displayName") or "" for m in c.get("members", [])]
+            label = topic if topic else ", ".join(members[:4])
+            preview = c.get("lastMessagePreview", {}) or {}
+            body = strip_html(preview.get("body", {}).get("content", ""))[:60]
+            ts = preview.get("createdDateTime", "")[:16]
+            lines.append(f"{i}. {label}\n   [{ts}] {body}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"{header}\nFailed to retrieve ({e})"
+
+def _briefing_flagged_email() -> str:
+    """Return the flagged-emails portion of the 'Needs Your Response' section.
+
+    No $orderby is combined with the flag filter — Graph rejects that pairing
+    as too complex on the messages collection.
+    """
+    try:
+        data = graph_get("/me/messages", params={
+            "$filter": "flag/flagStatus eq 'flagged'",
+            "$select": "subject,from",
+            "$top": 15,
+        })
+        msgs = data.get("value", [])
+        if not msgs:
+            return "Flagged emails: none"
+        lines = [f"Flagged emails ({len(msgs)}):"]
+        for m in msgs:
+            subject = m.get("subject", "(No subject)")
+            sender = m.get("from", {}).get("emailAddress", {}).get("name", "Unknown")
+            lines.append(f"  - {subject} — {sender}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Flagged emails: Failed to retrieve ({e})"
+
 # ═══════════════════════════════════════════
 # Auth Management
 # ═══════════════════════════════════════════
