@@ -11,6 +11,7 @@ from ms_teams_mcp.server import (
     strip_html,
     _pagination_footer,
     _check_response,
+    _apply_to_messages,
     list_teams,
     list_emails,
     search_emails,
@@ -289,3 +290,27 @@ class TestSearchEmailsEmpty:
         mock_graph_get.return_value = {"value": []}
         result = search_emails(query="nonexistent")
         assert "검색 결과가 없습니다" in result
+
+
+# ──────────────────────────────────────────
+# 13. test_apply_to_messages
+# ──────────────────────────────────────────
+
+class TestApplyToMessages:
+    def test_all_succeed(self):
+        calls = []
+        result = _apply_to_messages("a, b, c", lambda mid: calls.append(mid))
+        assert calls == ["a", "b", "c"]
+        assert "3 succeeded, 0 failed." in result
+
+    def test_partial_failure(self):
+        def action(mid):
+            if mid == "bad":
+                raise Exception("Resource not found (404)")
+        result = _apply_to_messages("ok,bad", action)
+        assert "1 succeeded, 1 failed." in result
+        assert "bad: Resource not found (404)" in result
+
+    def test_empty_input(self):
+        result = _apply_to_messages("  ", lambda mid: None)
+        assert result == "No message IDs provided."

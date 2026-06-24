@@ -201,6 +201,27 @@ def _parse_recipients(addresses: str) -> list[dict]:
     """Convert comma-separated email addresses to Graph API recipients format"""
     return [{"emailAddress": {"address": a.strip()}} for a in addresses.split(",") if a.strip()]
 
+def _apply_to_messages(message_ids: str, action) -> str:
+    """Apply `action(message_id)` to each comma-separated message ID and aggregate results.
+
+    `action` performs one Graph call for a single message and may raise on failure.
+    Returns a summary like "N succeeded, M failed." with failure details when M > 0.
+    """
+    ids = [m.strip() for m in message_ids.split(",") if m.strip()]
+    if not ids:
+        return "No message IDs provided."
+    succeeded, failed = [], []
+    for mid in ids:
+        try:
+            action(mid)
+            succeeded.append(mid)
+        except Exception as e:
+            failed.append(f"  {mid}: {e}")
+    parts = [f"{len(succeeded)} succeeded, {len(failed)} failed."]
+    if failed:
+        parts.append("\n".join(failed))
+    return "\n".join(parts)
+
 def _parse_attendees(addresses: str) -> list[dict]:
     """Convert comma-separated email addresses to Graph API attendees format"""
     return [
