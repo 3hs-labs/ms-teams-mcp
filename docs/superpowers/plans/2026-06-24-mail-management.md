@@ -34,25 +34,23 @@
 
 ---
 
-## Task 0: 개발 환경 셋업 (테스트 실행 준비)
+## Task 0: 개발 환경 셋업 (완료됨 — 참고)
 
-이 환경에는 프로젝트 의존성(`msal` 등)과 `pytest`가 설치돼 있지 않다. 이후 모든 테스트 실행의 전제다.
+> **이미 완료:** PEP 668(externally-managed) 때문에 시스템 pip 직접 설치가 막혀 있어,
+> `ms-teams-mcp/.venv` 가상환경을 만들고 `pip install -e . pytest`를 설치해 두었다(`.venv`는
+> gitignore됨). **이후 모든 테스트는 `.venv/bin/python -m pytest ...` 로 실행한다**
+> (`.venv/bin/python -m pytest`가 아님 — 시스템 파이썬엔 의존성이 없다).
+>
+> 베이스라인 확인 결과: `13 failed, 10 passed`. 13개 실패는 전부 **기존 stale 테스트**(한국어
+> assert가 영어 출력과 불일치)로 본 작업 범위 밖이다. 신규 추가 테스트는 모두 통과해야 한다.
 
-**Files:** 없음 (환경 설정만)
-
-- [ ] **Step 1: 의존성 + pytest 설치**
-
-작업 디렉토리는 `ms-teams-mcp/`.
+작업 디렉토리는 `ms-teams-mcp/`. 재현이 필요할 때만:
 ```bash
 cd ms-teams-mcp
-pip install -e .
-pip install pytest
+python3 -m venv .venv
+.venv/bin/python -m pip install -e . pytest
+.venv/bin/python -m pytest tests/ -q   # baseline: 13 failed, 10 passed
 ```
-
-- [ ] **Step 2: 기존 스위트 상태 확인 (baseline)**
-
-Run: `cd ms-teams-mcp && python3 -m pytest tests/ -q`
-Expected: import는 성공하고 일부 기존 테스트는 **FAIL**(한국어 assert가 영어 출력과 불일치). 이는 사전 존재하는 stale 실패이며 본 작업 범위 밖임을 확인만 한다. 신규로 추가할 테스트는 모두 통과해야 한다.
 
 ---
 
@@ -96,7 +94,7 @@ class TestApplyToMessages:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestApplyToMessages -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestApplyToMessages -v`
 Expected: FAIL — `ImportError: cannot import name '_apply_to_messages'`
 
 - [ ] **Step 3: Implement the helper**
@@ -128,7 +126,7 @@ def _apply_to_messages(message_ids: str, action) -> str:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestApplyToMessages -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestApplyToMessages -v`
 Expected: PASS (3 passed)
 
 - [ ] **Step 5: Commit**
@@ -192,7 +190,7 @@ class TestResolveFolderId:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestResolveFolderId -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestResolveFolderId -v`
 Expected: FAIL — `ImportError: cannot import name '_resolve_folder_id'`
 
 - [ ] **Step 3: Implement the helper**
@@ -231,7 +229,7 @@ def _resolve_folder_id(destination: str) -> str:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestResolveFolderId -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestResolveFolderId -v`
 Expected: PASS (4 passed)
 
 - [ ] **Step 5: Commit**
@@ -275,7 +273,7 @@ class TestMarkEmailRead:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestMarkEmailRead -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestMarkEmailRead -v`
 Expected: FAIL — `ImportError: cannot import name 'mark_email_read'`
 
 - [ ] **Step 3: Implement the tool**
@@ -298,7 +296,7 @@ def mark_email_read(message_ids: str, is_read: bool = True) -> str:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestMarkEmailRead -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestMarkEmailRead -v`
 Expected: PASS (2 passed)
 
 - [ ] **Step 5: Commit**
@@ -350,7 +348,7 @@ class TestFlagEmail:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestFlagEmail -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestFlagEmail -v`
 Expected: FAIL — `ImportError: cannot import name 'flag_email'`
 
 - [ ] **Step 3: Implement the tool**
@@ -376,7 +374,7 @@ def flag_email(message_ids: str, flag_status: str = "flagged") -> str:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestFlagEmail -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestFlagEmail -v`
 Expected: PASS (3 passed)
 
 - [ ] **Step 5: Commit**
@@ -424,7 +422,7 @@ class TestMoveEmail:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestMoveEmail -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestMoveEmail -v`
 Expected: FAIL — `ImportError: cannot import name 'move_email'`
 
 - [ ] **Step 3: Implement the tool**
@@ -449,7 +447,7 @@ def move_email(message_ids: str, destination: str) -> str:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestMoveEmail -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestMoveEmail -v`
 Expected: PASS (2 passed)
 
 - [ ] **Step 5: Commit**
@@ -493,7 +491,7 @@ class TestDeleteEmail:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestDeleteEmail -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestDeleteEmail -v`
 Expected: FAIL — `ImportError: cannot import name 'delete_email'`
 
 - [ ] **Step 3: Implement the tool**
@@ -516,7 +514,7 @@ def delete_email(message_ids: str) -> str:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd ms-teams-mcp && python3 -m pytest tests/test_server.py::TestDeleteEmail -v`
+Run: `cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py::TestDeleteEmail -v`
 Expected: PASS (2 passed)
 
 - [ ] **Step 5: Commit**
@@ -548,7 +546,7 @@ git commit -m "feat(mail): add delete_email tool (confirmation required)"
 
 - [ ] **Step 2: Verify import still succeeds**
 
-Run: `cd ms-teams-mcp && python3 -c "import ms_teams_mcp.server as s; assert 'Mail.ReadWrite' in s.SCOPES; print('scope OK')"`
+Run: `cd ms-teams-mcp && .venv/bin/python -c "import ms_teams_mcp.server as s; assert 'Mail.ReadWrite' in s.SCOPES; print('scope OK')"`
 Expected: `scope OK`
 
 - [ ] **Step 3: Commit**
@@ -586,7 +584,7 @@ git commit -m "feat(mail): add Mail.ReadWrite scope for mail management"
 
 - [ ] **Step 4: Verify no Korean leaked into server.py output strings**
 
-Run: `cd ms-teams-mcp && python3 -c "import ms_teams_mcp.server as s, inspect; [print('CHECK', n) for n in ('mark_email_read','flag_email','move_email','delete_email','_apply_to_messages','_resolve_folder_id') if any(ord(ch)>0x3000 for ch in inspect.getsource(getattr(s,n)))]"`
+Run: `cd ms-teams-mcp && .venv/bin/python -c "import ms_teams_mcp.server as s, inspect; [print('CHECK', n) for n in ('mark_email_read','flag_email','move_email','delete_email','_apply_to_messages','_resolve_folder_id') if any(ord(ch)>0x3000 for ch in inspect.getsource(getattr(s,n)))]"`
 Expected: 출력 없음 (신규 코드에 비-ASCII/한국어 문자열 없음)
 
 - [ ] **Step 5: Commit**
@@ -607,13 +605,13 @@ git commit -m "docs(mail): document mail management tools and Mail.ReadWrite sco
 
 Run:
 ```bash
-cd ms-teams-mcp && python3 -m pytest tests/test_server.py -v -k "ApplyToMessages or ResolveFolderId or MarkEmailRead or FlagEmail or MoveEmail or DeleteEmail"
+cd ms-teams-mcp && .venv/bin/python -m pytest tests/test_server.py -v -k "ApplyToMessages or ResolveFolderId or MarkEmailRead or FlagEmail or MoveEmail or DeleteEmail"
 ```
 Expected: 모두 PASS (16 passed). 기존 stale 테스트는 이 `-k` 필터에서 제외되므로 영향 없음.
 
 - [ ] **Step 2: Sanity import of the whole server**
 
-Run: `cd ms-teams-mcp && python3 -c "import ms_teams_mcp.server; print('import OK')"`
+Run: `cd ms-teams-mcp && .venv/bin/python -c "import ms_teams_mcp.server; print('import OK')"`
 Expected: `import OK`
 
 ---
