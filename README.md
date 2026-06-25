@@ -53,7 +53,9 @@ You will need these three values:
 
 ### 3. Install uv
 
-This project uses [`uvx`](https://docs.astral.sh/uv/) to run the MCP server:
+This project can run through [`uvx`](https://docs.astral.sh/uv/) without a
+separate installation. If you prefer to install the `ms-teams-mcp` command with
+`pip`, skip this step and see [pip Install (No venv)](#pip-install-no-venv).
 
 **Linux / macOS:**
 ```bash
@@ -232,22 +234,46 @@ Add to your config file:
 
 ### pip Install (No venv)
 
-Install directly into your current Python environment without creating a virtual environment:
+Install directly from GitHub without creating a virtual environment.
+
+Recommended user-site install:
 
 ```bash
-pip install "git+https://github.com/3hs-labs/ms-teams-mcp.git"
-```
-
-If your system Python blocks global installs, install into your user site-packages:
-
-```bash
-pip install --user "git+https://github.com/3hs-labs/ms-teams-mcp.git"
+python3 -m pip install --user "git+https://github.com/3hs-labs/ms-teams-mcp.git"
 ```
 
 Verify the command is available:
 
 ```bash
 ms-teams-mcp --version
+```
+
+If `ms-teams-mcp: command not found` appears, make sure your user scripts
+directory is on `PATH`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+To make that permanent for Bash:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+If your system Python allows global installs, you can install without `--user`:
+
+```bash
+python3 -m pip install "git+https://github.com/3hs-labs/ms-teams-mcp.git"
+```
+
+On recent Ubuntu/Debian systems, global pip installs may be blocked by the
+externally managed environment policy. Prefer `--user`; if you intentionally
+want to install into the system Python, you may need:
+
+```bash
+python3 -m pip install --break-system-packages "git+https://github.com/3hs-labs/ms-teams-mcp.git"
 ```
 
 Run the server directly:
@@ -287,6 +313,18 @@ For AGY, use the same JSON shown above but replace `"command": "uvx"` and the
 For Hermes Agent, use the YAML shown above but replace the `command` with
 `"ms-teams-mcp"` and remove the `args` list.
 
+Direct Hermes Agent example:
+
+```yaml
+mcp_servers:
+  ms-teams-mcp:
+    command: ms-teams-mcp
+    env:
+      MS_CLIENT_ID: <your-client-id>
+      MS_CLIENT_SECRET: <your-client-secret>
+      MS_TENANT_ID: <your-tenant-id>
+```
+
 ### Authentication
 
 On first use, call the `authenticate` tool from your MCP client — it will provide a Device Code Flow URL to sign in via your browser.
@@ -317,7 +355,7 @@ Token is cached at `~/.ms_mcp_token.json` and silently renewed on subsequent run
 uv cache clean
 
 # pip — force reinstall from GitHub
-pip install --upgrade --force-reinstall "git+https://github.com/3hs-labs/ms-teams-mcp.git"
+python3 -m pip install --user --upgrade --force-reinstall "git+https://github.com/3hs-labs/ms-teams-mcp.git"
 ```
 
 The server automatically checks for updates on startup (once per 24h) by reading the version in the repo's `pyproject.toml` on GitHub, and notifies via stderr. You can also call the `check_update` tool from any MCP client.
