@@ -149,32 +149,30 @@ Open AGY's MCP manager and edit the raw MCP JSON configuration, then add:
 
 ### Hermes Agent
 
-If Hermes was installed with the standard installer, MCP support is already included. Otherwise, enable the MCP extra first:
-
-```bash
-cd ~/.hermes/hermes-agent
-uv pip install -e ".[mcp]"
-```
-
-Then add this server to your Hermes config:
+Add to `~/.hermes/config.yaml` under the `mcp_servers` key:
 
 ```yaml
 mcp_servers:
-  ms-teams:
-    command: "uvx"
+  ms-teams-mcp:
+    command: uvx
     args:
-      - "--from"
-      - "git+https://github.com/3hs-labs/ms-teams-mcp.git"
-      - "ms-teams-mcp"
+      - ms-teams-mcp
     env:
-      MS_CLIENT_ID: "<your-client-id>"
-      MS_CLIENT_SECRET: "<your-client-secret>"
-      MS_TENANT_ID: "<your-tenant-id>"
+      MS_CLIENT_ID: <your-client-id>
+      MS_CLIENT_SECRET: <your-client-secret>
+      MS_TENANT_ID: <your-tenant-id>
 ```
 
-Start Hermes with `hermes chat`, or reload an existing session with `/reload-mcp`. You can verify the server with `hermes mcp test ms-teams`.
+Then verify with:
 
-On first use in any client, call the `authenticate` tool — it will guide you through Device Code Flow login in your browser.
+```bash
+hermes mcp list               # Should show ms-teams-mcp as ✓ enabled
+hermes mcp test ms-teams-mcp  # Should report Connected + 33 tools
+```
+
+> **Note**: Do not add ms-teams-mcp to `plugins.enabled` — it has no `plugin.yaml` and will produce a warning. Use `mcp_servers` instead.
+
+On first use, ask Hermes to call the `authenticate` tool — it will guide you through Device Code Flow login in your browser.
 
 ### VS Code
 
