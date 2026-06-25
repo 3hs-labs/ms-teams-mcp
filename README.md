@@ -230,20 +230,50 @@ Add to your config file:
 
 > **Windows**: Replace `"command": "uvx"` with `"command": "uvx.cmd"` if `uvx` is not found.
 
-### pip Install (from GitHub)
+### pip Install (No venv)
+
+Install directly into your current Python environment without creating a virtual environment:
 
 ```bash
 pip install "git+https://github.com/3hs-labs/ms-teams-mcp.git"
+```
 
-# Claude Code
+If your system Python blocks global installs, install into your user site-packages:
+
+```bash
+pip install --user "git+https://github.com/3hs-labs/ms-teams-mcp.git"
+```
+
+Verify the command is available:
+
+```bash
+ms-teams-mcp --version
+```
+
+Run the server directly:
+
+```bash
+ms-teams-mcp                  # stdio MCP server
+ms-teams-mcp serve            # streamable-http server
+ms-teams-mcp serve --transport sse
+```
+
+Register the installed command with your MCP client:
+
+#### Claude Code
+
+```bash
 claude mcp add ms-teams \
   -s user \
   -e MS_CLIENT_ID=<your-client-id> \
   -e MS_CLIENT_SECRET=<your-client-secret> \
   -e MS_TENANT_ID=<your-tenant-id> \
   -- ms-teams-mcp
+```
 
-# Codex CLI
+#### Codex CLI
+
+```bash
 codex mcp add ms-teams \
   --env MS_CLIENT_ID=<your-client-id> \
   --env MS_CLIENT_SECRET=<your-client-secret> \
