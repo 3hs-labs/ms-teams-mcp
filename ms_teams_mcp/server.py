@@ -2701,7 +2701,7 @@ def main():
             update_msg = _check_and_auto_update()
             if update_msg and sys.stderr is not None:
                 print(update_msg, file=sys.stderr, flush=True)
-            print(f"Starting MCP server ({transport}) on {host}:{port}...")
+            print(f"Starting MCP server ({transport}) on {host}:{port}...", file=sys.stderr, flush=True)
             mcp.run(transport=transport, host=host, port=port)
         elif command in ("--version", "-v", "version"):
             print(f"ms-teams-mcp {__version__}")
@@ -2712,7 +2712,7 @@ def main():
         update_msg = _check_and_auto_update()
         if update_msg and sys.stderr is not None:
             print(update_msg, file=sys.stderr, flush=True)
-        print("Starting Microsoft Teams MCP server...")
+        print("Starting Microsoft Teams MCP server...", file=sys.stderr, flush=True)
         mcp.run()
 
 if __name__ == "__main__":

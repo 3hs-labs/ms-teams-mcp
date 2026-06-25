@@ -7,6 +7,7 @@ so that no real API calls are made.
 import pytest
 from unittest.mock import patch, MagicMock  # noqa: F401 - MagicMock used in TestCheckResponse
 
+import ms_teams_mcp.server as server
 from ms_teams_mcp.server import (
     strip_html,
     _pagination_footer,
@@ -216,6 +217,25 @@ class TestRequestWithRetry:
         with pytest.raises(Exception, match="Rate limit exceeded"):
             graph_get("/me")
         assert mock_request.call_count == 4
+
+
+# ──────────────────────────────────────────
+# 3c. test_main_stdio_output
+# ──────────────────────────────────────────
+
+class TestMainStdioOutput:
+    def test_stdio_startup_message_goes_to_stderr(self, monkeypatch, capsys):
+        monkeypatch.setattr(server.sys, "argv", ["ms-teams-mcp"])
+        monkeypatch.setattr(server, "_check_and_auto_update", lambda: None)
+        mock_run = MagicMock()
+        monkeypatch.setattr(server.mcp, "run", mock_run)
+
+        server.main()
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "Starting Microsoft Teams MCP server..." in captured.err
+        mock_run.assert_called_once_with()
 
 
 # ──────────────────────────────────────────
