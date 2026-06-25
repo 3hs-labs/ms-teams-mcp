@@ -2,7 +2,7 @@
 
 An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that provides access to Microsoft Teams chats/channels, Outlook emails, calendar events, and SharePoint files via the Microsoft Graph API.
 
-Use natural language in Claude Code, VS Code, Claude Desktop, or any MCP client to read Teams messages, search emails, manage calendar events, browse files, and more.
+Use natural language in Claude Code, Codex CLI, AGY, VS Code, Claude Desktop, or any MCP client to read Teams messages, search emails, manage calendar events, browse files, and more.
 
 ## Features
 
@@ -69,9 +69,9 @@ Restart your terminal, then verify: `uvx --version`
 
 ## Installation & Usage
 
-### Claude Code (Recommended)
+### Claude Code
 
-No pre-installation needed — `uvx` automatically downloads and runs the package. Just register and authenticate from within Claude.
+No pre-installation needed for this MCP server — `uvx` automatically downloads and runs the package.
 
 **Linux / macOS:**
 ```bash
@@ -90,12 +90,64 @@ claude mcp add ms-teams `
   -e MS_CLIENT_ID=<your-client-id> `
   -e MS_CLIENT_SECRET=<your-client-secret> `
   -e MS_TENANT_ID=<your-tenant-id> `
+  -- uvx.cmd --from "git+https://github.com/3hs-labs/ms-teams-mcp.git" ms-teams-mcp
+```
+
+Verify the server is configured with `claude mcp list`.
+
+### Codex CLI
+
+Codex stores MCP configuration in `~/.codex/config.toml`, shared by Codex CLI and the Codex IDE extension.
+
+**Linux / macOS:**
+```bash
+codex mcp add ms-teams \
+  --env MS_CLIENT_ID=<your-client-id> \
+  --env MS_CLIENT_SECRET=<your-client-secret> \
+  --env MS_TENANT_ID=<your-tenant-id> \
   -- uvx --from "git+https://github.com/3hs-labs/ms-teams-mcp.git" ms-teams-mcp
+```
+
+**Windows (PowerShell):**
+```powershell
+codex mcp add ms-teams `
+  --env MS_CLIENT_ID=<your-client-id> `
+  --env MS_CLIENT_SECRET=<your-client-secret> `
+  --env MS_TENANT_ID=<your-tenant-id> `
+  -- uvx.cmd --from "git+https://github.com/3hs-labs/ms-teams-mcp.git" ms-teams-mcp
 ```
 
 > **Windows Note**: If `uvx` is not found, use `uvx.cmd` or the full path `%USERPROFILE%\.local\bin\uvx.cmd`.
 
-On first use, ask Claude to call the `authenticate` tool — it will guide you through Device Code Flow login in your browser.
+Verify the server is configured with `codex mcp list`.
+
+### AGY / Google Antigravity
+
+Open AGY's MCP manager and edit the raw MCP JSON configuration, then add:
+
+```json
+{
+  "mcpServers": {
+    "ms-teams": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/3hs-labs/ms-teams-mcp.git",
+        "ms-teams-mcp"
+      ],
+      "env": {
+        "MS_CLIENT_ID": "<your-client-id>",
+        "MS_CLIENT_SECRET": "<your-client-secret>",
+        "MS_TENANT_ID": "<your-tenant-id>"
+      }
+    }
+  }
+}
+```
+
+> **Windows**: Use `"command": "uvx.cmd"` if `uvx` is not found.
+
+On first use in any client, call the `authenticate` tool — it will guide you through Device Code Flow login in your browser.
 
 ### VS Code
 
@@ -158,13 +210,24 @@ Add to your config file:
 ```bash
 pip install "git+https://github.com/3hs-labs/ms-teams-mcp.git"
 
+# Claude Code
 claude mcp add ms-teams \
   -s user \
   -e MS_CLIENT_ID=<your-client-id> \
   -e MS_CLIENT_SECRET=<your-client-secret> \
   -e MS_TENANT_ID=<your-tenant-id> \
   -- ms-teams-mcp
+
+# Codex CLI
+codex mcp add ms-teams \
+  --env MS_CLIENT_ID=<your-client-id> \
+  --env MS_CLIENT_SECRET=<your-client-secret> \
+  --env MS_TENANT_ID=<your-tenant-id> \
+  -- ms-teams-mcp
 ```
+
+For AGY, use the same JSON shown above but replace `"command": "uvx"` and the
+`"args"` array with `"command": "ms-teams-mcp"`.
 
 ### Authentication
 
@@ -204,9 +267,17 @@ The server automatically checks for updates on startup (once per 24h) by reading
 ### Verify & Remove
 
 ```bash
-claude mcp list                       # List registered MCP servers
-claude mcp remove ms-teams     # Remove server
+# Claude Code
+claude mcp list
+claude mcp remove ms-teams
+
+# Codex CLI
+codex mcp list
+codex mcp remove ms-teams
 ```
+
+For AGY, open the MCP manager or raw MCP JSON configuration and remove the
+`ms-teams` entry.
 
 ## Available MCP Tools (48)
 
@@ -497,7 +568,7 @@ https://mcp.your-domain.com/mcp
 
 | Mode | Command | Endpoint | Use Case |
 |------|---------|----------|----------|
-| stdio | `ms-teams-mcp` | — | Claude Code, VS Code (local) |
+| stdio | `ms-teams-mcp` | — | Claude Code, Codex CLI, AGY, VS Code (local) |
 | SSE | `ms-teams-mcp serve --transport sse` | `http://host:7979/sse` | Claude Desktop (local/remote) |
 | streamable-http | `ms-teams-mcp serve` | `http://host:7979/mcp` | Claude web, remote clients |
 
