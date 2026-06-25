@@ -2,7 +2,7 @@
 
 An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that provides access to Microsoft Teams chats/channels, Outlook emails, calendar events, and SharePoint files via the Microsoft Graph API.
 
-Use natural language in Claude Code, Codex CLI, AGY, VS Code, Claude Desktop, or any MCP client to read Teams messages, search emails, manage calendar events, browse files, and more.
+Use natural language in Claude Code, Codex CLI, AGY, Hermes Agent, VS Code, Claude Desktop, or any MCP client to read Teams messages, search emails, manage calendar events, browse files, and more.
 
 ## Features
 
@@ -147,6 +147,33 @@ Open AGY's MCP manager and edit the raw MCP JSON configuration, then add:
 
 > **Windows**: Use `"command": "uvx.cmd"` if `uvx` is not found.
 
+### Hermes Agent
+
+If Hermes was installed with the standard installer, MCP support is already included. Otherwise, enable the MCP extra first:
+
+```bash
+cd ~/.hermes/hermes-agent
+uv pip install -e ".[mcp]"
+```
+
+Then add this server to your Hermes config:
+
+```yaml
+mcp_servers:
+  ms-teams:
+    command: "uvx"
+    args:
+      - "--from"
+      - "git+https://github.com/3hs-labs/ms-teams-mcp.git"
+      - "ms-teams-mcp"
+    env:
+      MS_CLIENT_ID: "<your-client-id>"
+      MS_CLIENT_SECRET: "<your-client-secret>"
+      MS_TENANT_ID: "<your-tenant-id>"
+```
+
+Start Hermes with `hermes chat`, or reload an existing session with `/reload-mcp`. You can verify the server with `hermes mcp test ms-teams`.
+
 On first use in any client, call the `authenticate` tool — it will guide you through Device Code Flow login in your browser.
 
 ### VS Code
@@ -229,6 +256,9 @@ codex mcp add ms-teams \
 For AGY, use the same JSON shown above but replace `"command": "uvx"` and the
 `"args"` array with `"command": "ms-teams-mcp"`.
 
+For Hermes Agent, use the YAML shown above but replace the `command` with
+`"ms-teams-mcp"` and remove the `args` list.
+
 ### Authentication
 
 On first use, call the `authenticate` tool from your MCP client — it will provide a Device Code Flow URL to sign in via your browser.
@@ -278,6 +308,9 @@ codex mcp remove ms-teams
 
 For AGY, open the MCP manager or raw MCP JSON configuration and remove the
 `ms-teams` entry.
+
+For Hermes Agent, remove the `ms-teams` entry under `mcp_servers` and reload with
+`/reload-mcp`.
 
 ## Available MCP Tools (48)
 
@@ -568,7 +601,7 @@ https://mcp.your-domain.com/mcp
 
 | Mode | Command | Endpoint | Use Case |
 |------|---------|----------|----------|
-| stdio | `ms-teams-mcp` | — | Claude Code, Codex CLI, AGY, VS Code (local) |
+| stdio | `ms-teams-mcp` | — | Claude Code, Codex CLI, AGY, Hermes Agent, VS Code (local) |
 | SSE | `ms-teams-mcp serve --transport sse` | `http://host:7979/sse` | Claude Desktop (local/remote) |
 | streamable-http | `ms-teams-mcp serve` | `http://host:7979/mcp` | Claude web, remote clients |
 
