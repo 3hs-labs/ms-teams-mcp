@@ -105,8 +105,15 @@ def _get_pub_app():
 def save_cache():
     cache = _get_cache()
     if cache.has_state_changed:
+        cache_dir = os.path.dirname(TOKEN_CACHE_FILE)
+        if cache_dir:
+            os.makedirs(cache_dir, exist_ok=True)
         with open(TOKEN_CACHE_FILE, "w") as f:
             f.write(cache.serialize())
+        try:
+            os.chmod(TOKEN_CACHE_FILE, 0o600)
+        except OSError:
+            pass
 
 # ─────────────────────────────────────────
 # Token acquisition (silent refresh → error on failure)
@@ -120,20 +127,28 @@ def _reload_cache():
     except FileNotFoundError:
         pass
 
-def get_token():
-    # Try ConfidentialClientApplication first, then fall back to PublicClientApplication.
-    # CLI auth uses PublicClient, so its cached accounts may not be visible to ConfidentialClient.
+def _silent_token_status():
+    """Return (result, account) for any cached account that can provide a token silently."""
+    if not os.path.exists(TOKEN_CACHE_FILE):
+        return None, None
+
     for app_getter in (_get_app, _get_pub_app):
         app = app_getter()
         for attempt in range(2):
             accounts = app.get_accounts()
-            if accounts:
-                result = app.acquire_token_silent(SCOPES, account=accounts[0])
+            for account in accounts:
+                result = app.acquire_token_silent(SCOPES, account=account)
                 if result and "access_token" in result:
                     save_cache()
-                    return result["access_token"]
+                    return result, account
             if attempt == 0:
                 _reload_cache()
+    return None, None
+
+def get_token():
+    result, _account = _silent_token_status()
+    if result and "access_token" in result:
+        return result["access_token"]
     raise Exception(
         "Authentication required. Run 'ms-teams-mcp auth' or "
         "call the authenticate tool in MCP."
@@ -2497,8 +2512,19 @@ def check_update() -> str:
 @mcp.tool()
 def auth_status() -> str:
     """Check current Microsoft authentication status"""
-    app = _get_app()
-    accounts = app.get_accounts()
+    result, account = _silent_token_status()
+    if result and account:
+        username = account.get("username", "Unknown")
+        return f"Authenticated - Account: {username}\nToken is valid."
+
+    accounts = []
+    if os.path.exists(TOKEN_CACHE_FILE):
+        for app_getter in (_get_app, _get_pub_app):
+            try:
+                accounts.extend(app_getter().get_accounts())
+            except Exception:
+                pass
+
     if not accounts:
         return (
             "Not authenticated - No token found.\n"
@@ -2506,27 +2532,19 @@ def auth_status() -> str:
         )
     account = accounts[0]
     username = account.get("username", "Unknown")
-    result = app.acquire_token_silent(SCOPES, account=account)
-    if result and "access_token" in result:
-        save_cache()
-        return f"Authenticated - Account: {username}\nToken is valid."
-    else:
-        return (
-            f"Token expired - Account: {username}\n"
-            "Call the authenticate tool to re-authenticate."
-        )
+    return (
+        f"Token expired or refresh failed - Account: {username}\n"
+        "Call the authenticate tool to re-authenticate."
+    )
 
 _pending_device_flow = None
 
 def _device_code_auth(on_flow_started=None):
     """Device Code Flow common logic. Returns (status, username) on success, raises on failure."""
-    # 1. Quick check: only try silent refresh if cached accounts exist
-    accounts = _get_app().get_accounts() if os.path.exists(TOKEN_CACHE_FILE) else []
-    if accounts:
-        result = _get_app().acquire_token_silent(SCOPES, account=accounts[0])
-        if result and "access_token" in result:
-            save_cache()
-            return ("refreshed", accounts[0]["username"])
+    # 1. Quick check: reuse or refresh any token saved by either CLI or MCP auth.
+    result, account = _silent_token_status()
+    if result and account:
+        return ("refreshed", account.get("username", "Unknown"))
 
     # 2. Start Device Code Flow (skip slow silent refresh, go straight to link)
     pub_app = _get_pub_app()
@@ -2555,14 +2573,11 @@ def authenticate() -> str:
     """
     global _pending_device_flow
 
-    # Quick check: if already authenticated, return immediately
+    # Quick check: if already authenticated, return immediately.
     try:
-        accounts = _get_app().get_accounts() if os.path.exists(TOKEN_CACHE_FILE) else []
-        if accounts:
-            result = _get_app().acquire_token_silent(SCOPES, account=accounts[0])
-            if result and "access_token" in result:
-                save_cache()
-                return f"Token already valid. Account: {accounts[0]['username']}"
+        result, account = _silent_token_status()
+        if result and account:
+            return f"Token already valid. Account: {account.get('username', 'Unknown')}"
     except Exception:
         pass
 

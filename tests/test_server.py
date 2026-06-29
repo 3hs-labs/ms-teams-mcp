@@ -12,6 +12,7 @@ from ms_teams_mcp.server import (
     strip_html,
     _pagination_footer,
     _check_response,
+    _silent_token_status,
     _request_with_retry,
     _retry_after_seconds,
     graph_get,
@@ -40,6 +41,9 @@ from ms_teams_mcp.server import (
     _briefing_flagged_email,
     _scan_channels,
     daily_briefing,
+    get_token,
+    auth_status,
+    authenticate,
 )
 
 
@@ -133,6 +137,63 @@ class TestCheckResponse:
     def test_200_no_raise(self):
         res = self._make_response(200)
         _check_response(res)  # should not raise
+
+
+# ──────────────────────────────────────────
+# 3a. Auth cache reuse
+# ──────────────────────────────────────────
+
+class TestAuthCacheReuse:
+    @patch("ms_teams_mcp.server.save_cache")
+    @patch("ms_teams_mcp.server.os.path.exists", return_value=True)
+    @patch("ms_teams_mcp.server._reload_cache")
+    @patch("ms_teams_mcp.server._get_pub_app")
+    @patch("ms_teams_mcp.server._get_app")
+    def test_silent_token_status_falls_back_to_public_cache(
+        self, mock_get_app, mock_get_pub_app, mock_reload, _mock_exists, mock_save
+    ):
+        confidential = MagicMock()
+        confidential.get_accounts.return_value = []
+        public = MagicMock()
+        account = {"username": "user@example.com"}
+        public.get_accounts.return_value = [account]
+        public.acquire_token_silent.return_value = {"access_token": "token"}
+        mock_get_app.return_value = confidential
+        mock_get_pub_app.return_value = public
+
+        result, returned_account = _silent_token_status()
+
+        assert result is not None
+        assert result["access_token"] == "token"
+        assert returned_account == account
+        public.acquire_token_silent.assert_called_once_with(server.SCOPES, account=account)
+        mock_reload.assert_called_once()
+        mock_save.assert_called_once()
+
+    @patch("ms_teams_mcp.server._silent_token_status")
+    def test_get_token_reuses_silent_token(self, mock_status):
+        mock_status.return_value = ({"access_token": "token"}, {"username": "user@example.com"})
+
+        assert get_token() == "token"
+
+    @patch("ms_teams_mcp.server._silent_token_status")
+    def test_auth_status_accepts_public_client_token(self, mock_status):
+        mock_status.return_value = ({"access_token": "token"}, {"username": "user@example.com"})
+
+        result = auth_status()
+
+        assert "Authenticated" in result
+        assert "user@example.com" in result
+
+    @patch("ms_teams_mcp.server._get_pub_app")
+    @patch("ms_teams_mcp.server._silent_token_status")
+    def test_authenticate_does_not_start_flow_when_token_valid(self, mock_status, mock_get_pub_app):
+        mock_status.return_value = ({"access_token": "token"}, {"username": "user@example.com"})
+
+        result = authenticate()
+
+        assert "Token already valid" in result
+        mock_get_pub_app.assert_not_called()
 
 
 # ──────────────────────────────────────────
